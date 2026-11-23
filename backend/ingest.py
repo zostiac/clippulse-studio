@@ -18,7 +18,35 @@ from models import (
     WordTiming,
 )
 
-FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+def _resolve_bold_font() -> str:
+    """Pick an on-disk bold TTF for ffmpeg drawtext, across platforms."""
+    candidates = [
+        # Windows
+        "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/segoeuib.ttf",
+        # macOS
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/Library/Fonts/Arial Bold.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        # Linux
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    ]
+    for cand in candidates:
+        if Path(cand).is_file():
+            return cand
+    return ""
+
+
+def _filter_path(path: str) -> str:
+    """Escape a filesystem path for use inside an ffmpeg filter string."""
+    return path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+
+
+FONT_BOLD = _resolve_bold_font()
+# drawtext option fragment: an escaped fontfile clause, or empty (fontconfig default)
+FONT_OPT = f"fontfile={_filter_path(FONT_BOLD)}:" if FONT_BOLD else ""
 
 
 class YouTubeBlockedError(Exception):
@@ -446,7 +474,7 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
                     f"drawbox=x=990:y=165:w=840:h=645:color=0x22D3EE@0.22:t=fill:enable='between(t,{st},{en})'"
                 )
             seg_filters.append(
-                f"drawtext=fontfile={FONT_BOLD}:text='{short_topic}':fontcolor=white:fontsize=33:"
+                f"drawtext={FONT_OPT}text='{short_topic}':fontcolor=white:fontsize=33:"
                 f"x=(w-text_w)/2:y=918:enable='between(t,{st},{en})'"
             )
 
@@ -454,22 +482,22 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             "drawbox=x=0:y=0:w=1920:h=1080:color=0x0D101B:t=fill",
             # Studio header bar
             "drawbox=x=0:y=0:w=1920:h=117:color=0x141829:t=fill",
-            f"drawtext=fontfile={FONT_BOLD}:text='{chan_lbl}':fontcolor=0x22D3EE:fontsize=30:x=90:y=42",
-            f"drawtext=fontfile={FONT_BOLD}:text='{title_lbl}':fontcolor=white:fontsize=33:x=495:y=39",
+            f"drawtext={FONT_OPT}text='{chan_lbl}':fontcolor=0x22D3EE:fontsize=30:x=90:y=42",
+            f"drawtext={FONT_OPT}text='{title_lbl}':fontcolor=white:fontsize=33:x=495:y=39",
             # Left speaker panel
             "drawbox=x=90:y=165:w=840:h=645:color=0x191F36:t=fill",
             "drawbox=x=90:y=165:w=840:h=645:color=0x7C5CFC@0.55:t=5",
             # Stylized speaker silhouette Left
             "drawbox=x=413:y=278:w=195:h=195:color=0x7C5CFC:t=fill",
             "drawbox=x=330:y=503:w=360:h=225:color=0x4C35B5:t=fill",
-            f"drawtext=fontfile={FONT_BOLD}:text='{left_lbl}':fontcolor=white:fontsize=33:x=150:y=203",
+            f"drawtext={FONT_OPT}text='{left_lbl}':fontcolor=white:fontsize=33:x=150:y=203",
             # Right speaker panel
             "drawbox=x=990:y=165:w=840:h=645:color=0x162235:t=fill",
             "drawbox=x=990:y=165:w=840:h=645:color=0x22D3EE@0.55:t=5",
             # Stylized speaker silhouette Right
             "drawbox=x=1313:y=278:w=195:h=195:color=0x22D3EE:t=fill",
             "drawbox=x=1230:y=503:w=360:h=225:color=0x0E7490:t=fill",
-            f"drawtext=fontfile={FONT_BOLD}:text='{right_lbl}':fontcolor=white:fontsize=33:x=1050:y=203",
+            f"drawtext={FONT_OPT}text='{right_lbl}':fontcolor=white:fontsize=33:x=1050:y=203",
             # Lower third bar
             "drawbox=x=90:y=870:w=1740:h=144:color=0x131726@0.95:t=fill",
             "drawbox=x=90:y=870:w=12:h=144:color=0x7C5CFC:t=fill",
@@ -512,7 +540,17 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             "+faststart",
             str(out_video),
         ]
-        subprocess.run(cmd, capture_output=True, check=True)
+        try:
+            subprocess.run(cmd, capture_output=True, check=True)
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "FFmpeg not found on PATH. Install FFmpeg and restart the server."
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            tail = (exc.stderr or b"").decode(errors="ignore").strip().splitlines()[-3:]
+            raise RuntimeError(
+                "Demo video generation failed (ffmpeg): " + (" / ".join(tail) or str(exc))
+            ) from exc
 
     meta = {
         "title": cfg["title"],

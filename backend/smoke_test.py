@@ -12,6 +12,7 @@ the /api/health capability report.
 import io
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -36,6 +37,18 @@ assert is_supported_video_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 8)
 assert is_supported_video_bytes(b"\x1a\x45\xdf\xa3rest")
 assert not is_supported_video_bytes(b"<html><body>nope")
 assert not is_supported_video_bytes(b"\x89PNG\r\n\x1a\n")
+
+# Cross-platform font plumbing for the demo generator's drawtext filters.
+from ingest import FONT_BOLD, FONT_OPT, _filter_path, _resolve_bold_font  # noqa: E402
+
+assert _filter_path("C:\\Windows\\Fonts\\arialbd.ttf") == "C\\:/Windows/Fonts/arialbd.ttf"
+assert _resolve_bold_font() == FONT_BOLD  # consistent at import time
+if FONT_BOLD:
+    assert Path(FONT_BOLD).is_file(), FONT_BOLD
+    assert FONT_OPT.startswith("fontfile=") and FONT_OPT.endswith(":")
+else:
+    assert FONT_OPT == ""  # falls back to fontconfig default
+print("font resolution OK ->", FONT_BOLD or "(fontconfig default)")
 
 # Project status vocabulary: intermediate state used by create/reanalyze flows.
 from models import Project  # noqa: E402

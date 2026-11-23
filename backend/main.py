@@ -381,7 +381,11 @@ def api_delete_project(project_id: str):
 def api_create_demo(payload: DemoRequest):
     proj_id = f"proj_{uuid.uuid4().hex[:8]}"
     pdir = get_project_dir(proj_id)
-    demo_video, meta, transcript = ensure_demo_project_assets(payload.demo_key)
+    try:
+        demo_video, meta, transcript = ensure_demo_project_assets(payload.demo_key)
+    except Exception as exc:
+        shutil.rmtree(pdir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=str(exc))
 
     dest_video = pdir / "source.mp4"
     # Demo assets are identical across projects: hardlink/symlink instead of copying.

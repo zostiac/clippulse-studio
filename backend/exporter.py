@@ -133,8 +133,8 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,DejaVu Sans,{font_size},{pal['primary']},&H00FFFFFF,{pal['outline_color']},{pal['back_color']},-1,0,0,0,100,100,0,0,{pal['border_style']},{pal['outline']},{pal['shadow']},{align},60,60,{margin_v},1
-Style: HookBanner,DejaVu Sans,{hook_font},&H00FFFFFF,&H00FFFFFF,&H005C3B7C,&HCC141829,-1,0,0,0,100,100,0,0,3,{max(6, int(14 * scale))},0,8,70,70,{int(145 * scale)},1
+Style: Caption,Arial,{font_size},{pal['primary']},&H00FFFFFF,{pal['outline_color']},{pal['back_color']},-1,0,0,0,100,100,0,0,{pal['border_style']},{pal['outline']},{pal['shadow']},{align},60,60,{margin_v},1
+Style: HookBanner,Arial,{hook_font},&H00FFFFFF,&H00FFFFFF,&H005C3B7C,&HCC141829,-1,0,0,0,100,100,0,0,3,{max(6, int(14 * scale))},0,8,70,70,{int(145 * scale)},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
