@@ -4,7 +4,9 @@ import io
 import mimetypes
 import os
 import shutil
+import subprocess
 import threading
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -25,6 +27,7 @@ from ingest import (
     fetch_youtube_oembed,
     generate_thumbnail,
     ingest_youtube,
+    is_supported_video_bytes,
     parse_plain_transcript,
     parse_subtitle_text,
     probe_video,
@@ -34,6 +37,9 @@ from models import (
     COOKIES_FILE,
     DATA_DIR,
     EXPORTS_DIR,
+    MAX_SUBTITLE_BYTES,
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_MB,
     PROJECTS_DIR,
     AppSettings,
     Clip,
@@ -42,6 +48,7 @@ from models import (
     Project,
     SubScores,
     TranscriptSegment,
+    TranscriptionError,
     delete_project,
     get_project_dir,
     list_projects,
@@ -57,10 +64,30 @@ app = FastAPI(title="ClipPulse Studio API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    # Wildcard origins cannot be combined with credentials; the app is token-free/local.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_capability_cache: Dict[str, object] = {}
+
+
+def _probe_binary_version(binary: str) -> Optional[str]:
+    """Return `<name> <version>` for a required external tool, or None if missing."""
+    key = f"bin:{binary}"
+    if key in _capability_cache:
+        return _capability_cache[key]  # type: ignore[return-value]
+    try:
+        res = subprocess.run(
+            [binary, "-version"], capture_output=True, text=True, timeout=10
+        )
+        first_line = (res.stdout or res.stderr).splitlines()
+        value: Optional[str] = first_line[0].strip() if first_line else binary
+    except Exception:
+        value = None
+    _capability_cache[key] = value
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +147,63 @@ def _stream_file_range(path: Path, request: Request, download_name: Optional[str
 
 
 # ---------------------------------------------------------------------------
+# Helpers: demo asset linking + analysis orchestration
+# ---------------------------------------------------------------------------
+
+def _link_or_copy(src: Path, dst: Path) -> None:
+    """Avoid duplicating multi-MB demo assets: hardlink, then symlink, then copy."""
+    if dst.exists() or dst.is_symlink():
+        return
+    try:
+        os.link(src, dst)
+        return
+    except OSError:
+        pass
+    try:
+        os.symlink(src, dst)
+        return
+    except OSError:
+        pass
+    shutil.copyfile(src, dst)
+
+
+def _run_analysis(project: Project, settings: AppSettings) -> Project:
+    """Transcribe/score a project, persisting `analyzing` then `ready`/`error`."""
+    project.status = "analyzing"
+    project.error_message = None
+    save_project(project)
+    try:
+        transcript, clips, engine_used = analyze_project(
+            project.id,
+            project.title,
+            Path(project.video_path),
+            project.duration,
+            project.transcript,
+            project.energy_peaks,
+            settings,
+        )
+    except Exception as exc:
+        # Never leave a project stuck in "analyzing": surface the failure on disk.
+        project.status = "error"
+        project.error_message = str(exc)
+        save_project(project)
+        raise
+    project.transcript = transcript
+    project.clips = clips
+    project.ai_engine_used = engine_used
+    project.status = "ready"
+    if not transcript:
+        project.status_detail = (
+            "No transcript produced: clips were ranked with energy heuristics only. "
+            "Enable Local Whisper or a cloud provider in Settings for captions and better cuts."
+        )
+    else:
+        project.status_detail = ""
+    save_project(project)
+    return project
+
+
+# ---------------------------------------------------------------------------
 # Request Schemas
 # ---------------------------------------------------------------------------
 
@@ -172,7 +256,24 @@ class UpdateTranscriptRequest(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "ClipPulse Studio"}
+    ffmpeg = _probe_binary_version("ffmpeg")
+    ffprobe = _probe_binary_version("ffprobe")
+    try:
+        import faster_whisper  # noqa: F401
+
+        whisper = "available"
+    except Exception:
+        whisper = "unavailable"
+    return {
+        "status": "ok",
+        "service": "ClipPulse Studio",
+        "capabilities": {
+            "ffmpeg": ffmpeg,
+            "ffprobe": ffprobe,
+            "local_whisper": whisper,
+            "video_pipeline_ready": bool(ffmpeg and ffprobe),
+        },
+    }
 
 
 @app.get("/api/settings")
@@ -283,23 +384,13 @@ def api_create_demo(payload: DemoRequest):
     demo_video, meta, transcript = ensure_demo_project_assets(payload.demo_key)
 
     dest_video = pdir / "source.mp4"
-    shutil.copyfile(demo_video, dest_video)
+    # Demo assets are identical across projects: hardlink/symlink instead of copying.
+    _link_or_copy(demo_video, dest_video)
 
     duration, width, height = probe_video(dest_video)
     thumb_path = pdir / "thumb.jpg"
     generate_thumbnail(dest_video, thumb_path, duration)
     energy = compute_energy_peaks(dest_video)
-
-    settings = load_settings()
-    transcript, clips, engine_used = analyze_project(
-        proj_id,
-        meta["title"],
-        dest_video,
-        duration,
-        transcript,
-        energy,
-        settings,
-    )
 
     project = Project(
         id=proj_id,
@@ -312,13 +403,17 @@ def api_create_demo(payload: DemoRequest):
         duration=round(duration, 2),
         width=width,
         height=height,
-        status="ready",
+        status="analyzing",
         transcript=transcript,
-        clips=clips,
         energy_peaks=energy,
-        ai_engine_used=engine_used,
     )
     save_project(project)
+
+    settings = load_settings()
+    try:
+        project = _run_analysis(project, settings)
+    except TranscriptionError as exc:
+        raise HTTPException(status_code=422, detail=f"Transcription failed: {exc}")
     return project.model_dump()
 
 
@@ -355,17 +450,6 @@ def api_create_youtube(payload: YouTubeRequest):
     generate_thumbnail(video_path, thumb_path, duration)
     energy = compute_energy_peaks(video_path)
 
-    settings = load_settings()
-    transcript, clips, engine_used = analyze_project(
-        proj_id,
-        meta["title"],
-        video_path,
-        duration,
-        transcript,
-        energy,
-        settings,
-    )
-
     project = Project(
         id=proj_id,
         title=meta["title"],
@@ -378,13 +462,17 @@ def api_create_youtube(payload: YouTubeRequest):
         duration=round(duration, 2),
         width=width,
         height=height,
-        status="ready",
+        status="analyzing",
         transcript=transcript,
-        clips=clips,
         energy_peaks=energy,
-        ai_engine_used=engine_used,
     )
     save_project(project)
+
+    settings = load_settings()
+    try:
+        project = _run_analysis(project, settings)
+    except TranscriptionError as exc:
+        raise HTTPException(status_code=422, detail=f"Transcription failed: {exc}")
     return project.model_dump()
 
 
@@ -403,12 +491,34 @@ async def api_create_upload(
         ext = ".mp4"
     dest_video = pdir / f"source{ext}"
 
-    with dest_video.open("wb") as out_f:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            out_f.write(chunk)
+    total = 0
+    sniff_head = b""
+    try:
+        with dest_video.open("wb") as out_f:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Video exceeds the {MAX_UPLOAD_MB} MB upload limit.",
+                    )
+                if len(sniff_head) < 16:
+                    sniff_head += chunk[: 16 - len(sniff_head)]
+                out_f.write(chunk)
+    except BaseException:
+        # Covers HTTPException (cap) and client disconnects: never leave partial files.
+        shutil.rmtree(pdir, ignore_errors=True)
+        raise
+
+    if total == 0 or not is_supported_video_bytes(sniff_head):
+        shutil.rmtree(pdir, ignore_errors=True)
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported video format. Upload an MP4, MOV, WebM or MKV file.",
+        )
 
     try:
         duration, width, height = probe_video(dest_video)
@@ -418,7 +528,11 @@ async def api_create_upload(
 
     transcript: List[TranscriptSegment] = []
     if subtitle_file is not None:
-        raw_sub = (await subtitle_file.read()).decode("utf-8", errors="ignore")
+        raw_bytes = await subtitle_file.read()
+        if len(raw_bytes) > MAX_SUBTITLE_BYTES:
+            shutil.rmtree(pdir, ignore_errors=True)
+            raise HTTPException(status_code=413, detail="Subtitle file is too large.")
+        raw_sub = raw_bytes.decode("utf-8", errors="ignore")
         transcript = parse_subtitle_text(raw_sub)
     elif transcript_text and transcript_text.strip():
         raw_t = transcript_text.strip()
@@ -432,16 +546,6 @@ async def api_create_upload(
     energy = compute_energy_peaks(dest_video)
 
     clean_title = (title or "").strip() or Path(file.filename or "Uploaded Video").stem.replace("_", " ").replace("-", " ")
-    settings = load_settings()
-    transcript, clips, engine_used = analyze_project(
-        proj_id,
-        clean_title,
-        dest_video,
-        duration,
-        transcript,
-        energy,
-        settings,
-    )
 
     project = Project(
         id=proj_id,
@@ -454,13 +558,17 @@ async def api_create_upload(
         duration=round(duration, 2),
         width=width,
         height=height,
-        status="ready",
+        status="analyzing",
         transcript=transcript,
-        clips=clips,
         energy_peaks=energy,
-        ai_engine_used=engine_used,
     )
     save_project(project)
+
+    settings = load_settings()
+    try:
+        project = _run_analysis(project, settings)
+    except TranscriptionError as exc:
+        raise HTTPException(status_code=422, detail=f"Transcription failed: {exc}")
     return project.model_dump()
 
 
@@ -470,19 +578,10 @@ def api_reanalyze(project_id: str):
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
     settings = load_settings()
-    transcript, clips, engine_used = analyze_project(
-        proj.id,
-        proj.title,
-        Path(proj.video_path),
-        proj.duration,
-        proj.transcript,
-        proj.energy_peaks,
-        settings,
-    )
-    proj.transcript = transcript
-    proj.clips = clips
-    proj.ai_engine_used = engine_used
-    save_project(proj)
+    try:
+        proj = _run_analysis(proj, settings)
+    except TranscriptionError as exc:
+        raise HTTPException(status_code=422, detail=f"Transcription failed: {exc}")
     return proj.model_dump()
 
 
@@ -572,6 +671,7 @@ def api_update_clip(project_id: str, clip_id: str, payload: UpdateClipRequest):
         if target.export_status == "done":
             target.export_status = "idle"
             target.export_progress = 0
+            target.exported_at = None
 
     save_project(proj)
     return target.model_dump()
@@ -630,6 +730,7 @@ def _run_export_job(project_id: str, clip_id: str) -> None:
                         c.export_filename = out_path.name
                         c.export_url = f"/media/exports/{out_path.name}"
                         c.export_error = None
+                        c.exported_at = time.time()
                 save_project(p)
     except Exception as exc:
         with _store_lock:

@@ -7,6 +7,19 @@ from typing import Callable, List, Optional
 
 from models import Clip, EXPORTS_DIR, TranscriptSegment, WordTiming
 
+# Vertical export presets. Every render honors a hard 1080x1920 full-HD floor.
+RESOLUTION_PRESETS = {
+    "1080x1920": (1080, 1920),
+    "1440x2560": (1440, 2560),
+}
+MIN_OUT_W, MIN_OUT_H = 1080, 1920
+
+
+def resolve_output_size(resolution: str) -> tuple[int, int]:
+    """Map a stored resolution label to an output size, never below the 1080p floor."""
+    w, h = RESOLUTION_PRESETS.get(resolution, RESOLUTION_PRESETS["1080x1920"])
+    return max(MIN_OUT_W, w), max(MIN_OUT_H, h)
+
 
 def _fmt_ass_time(sec: float) -> str:
     sec = max(0.0, sec)
@@ -175,10 +188,7 @@ def export_clip_mp4(
     transcript: List[TranscriptSegment],
     on_progress: Optional[Callable[[int], None]] = None,
 ) -> Path:
-    if clip.style.resolution == "720x1280":
-        out_w, out_h = 720, 1280
-    else:
-        out_w, out_h = 1080, 1920
+    out_w, out_h = resolve_output_size(clip.style.resolution)
 
     out_name = f"{clip.project_id}_{clip.id}_{clip.style.layout}.mp4"
     out_path = EXPORTS_DIR / out_name

@@ -6,7 +6,6 @@ import {
   VolumeX,
   Repeat,
   Download,
-  Film,
   Loader2,
   Eye,
   Heart,
@@ -320,7 +319,7 @@ export default function StudioPreview({
           {previewMode === "exported" && clip.export_url ? (
             <video
               ref={mainVideoRef}
-              src={`${clip.export_url}?t=${clip.export_filename}`}
+              src={`${clip.export_url}?v=${clip.exported_at || 0}`}
               muted={muted}
               loop
               playsInline
@@ -610,12 +609,12 @@ export default function StudioPreview({
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-400">Output:</span>
             <select
-              value={style.resolution || "1080x1920"}
+              value={["1080x1920", "1440x2560"].includes(style.resolution) ? style.resolution : "1080x1920"}
               onChange={(e) => onUpdateStyle({ ...style, resolution: e.target.value })}
               className="px-2.5 py-1.5 rounded-lg bg-[#0A0B0F] border border-white/10 text-xs text-white focus:outline-none focus:border-violet-500"
             >
-              <option value="1080x1920">1080×1920 (Full HD 9:16)</option>
-              <option value="720x1280">720×1280 (Fast Export)</option>
+              <option value="1080x1920">1080×1920 · Full HD (min)</option>
+              <option value="1440x2560">1440×2560 · QHD</option>
             </select>
           </div>
 
@@ -643,7 +642,7 @@ export default function StudioPreview({
             {clip.export_status === "done" && clip.export_url && (
               <a
                 href={`${clip.export_url}?download=1`}
-                download={clip.export_filename || `${clip.id}.mp4`}
+                download={`${(clip.title || clip.id).replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").toLowerCase() || clip.id}.mp4`}
                 className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition"
               >
                 <Download className="w-4 h-4" />

@@ -16,6 +16,7 @@ from models import (
     PlatformMeta,
     SubScores,
     TranscriptSegment,
+    TranscriptionError,
     WordTiming,
 )
 
@@ -594,21 +595,38 @@ def analyze_project(
 
     # 1. Free or cloud transcription if no subtitles exist yet
     if not transcript:
+        attempted = False
+        failures: List[str] = []
+
         if api_key and settings.ai_provider in ("groq", "openai"):
+            attempted = True
             try:
                 transcript = transcribe_with_cloud_whisper(video_path, api_key, settings.ai_provider)
                 if transcript:
                     engine_used = f"{settings.ai_provider}_whisper"
-            except Exception:
+                else:
+                    failures.append(f"{settings.ai_provider} Whisper returned no segments")
+            except Exception as exc:
+                failures.append(f"{settings.ai_provider} Whisper failed: {exc}")
                 transcript = []
 
         if not transcript and settings.enable_local_whisper:
+            attempted = True
             try:
                 transcript = transcribe_with_local_whisper(video_path, settings.whisper_model)
                 if transcript:
                     engine_used = "local_whisper"
-            except Exception:
+                else:
+                    failures.append("Local Whisper returned no segments")
+            except Exception as exc:
+                failures.append(f"Local Whisper failed: {exc}")
                 transcript = []
+
+        if not transcript and attempted:
+            raise TranscriptionError(
+                "; ".join(failures)
+                + ". Enable a free cloud provider in Settings or turn on Local Whisper."
+            )
 
     # 2. LLM viral clip scoring (if free-tier or OpenAI key configured), else Local Heuristic
     clips: Optional[List[Clip]] = None
