@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.env
+.venv
+
+# Backend data (generated)
+backend/data/
+data/
+*.db
+*.sqlite3
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Exports (generated MP4s)
+*.mp4
+*.ass
+exports/
+
+# Settings (contains API keys)
+backend/data/settings.json
+data/settings.json
+youtube_cookies.txt
+
+# Demo videos (regenerated on first run)
+data/demos/*.mp4
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Temporary
+*.tmp
+*.temp
