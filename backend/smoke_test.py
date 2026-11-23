@@ -38,17 +38,21 @@ assert is_supported_video_bytes(b"\x1a\x45\xdf\xa3rest")
 assert not is_supported_video_bytes(b"<html><body>nope")
 assert not is_supported_video_bytes(b"\x89PNG\r\n\x1a\n")
 
-# Cross-platform font plumbing for the demo generator's drawtext filters.
-from ingest import FONT_BOLD, FONT_OPT, _filter_path, _resolve_bold_font  # noqa: E402
+# Cross-platform font plumbing and filter escaping for the demo generator.
+from ffutil import filter_quote  # noqa: E402
+from ingest import FONT_BOLD, FONT_OPT, _resolve_bold_font  # noqa: E402
 
-assert _filter_path("C:\\Windows\\Fonts\\arialbd.ttf") == "C\\:/Windows/Fonts/arialbd.ttf"
+assert filter_quote("C:\\Windows\\Fonts\\a.ttf") == "'C\\:\\\\Windows\\\\Fonts\\\\a.ttf'"
+assert filter_quote("/usr/share/fonts/x.ttf") == "'/usr/share/fonts/x.ttf'"
+assert filter_quote("it's 90%") == "'it\\'s 90%'"
 assert _resolve_bold_font() == FONT_BOLD  # consistent at import time
 if FONT_BOLD:
     assert Path(FONT_BOLD).is_file(), FONT_BOLD
-    assert FONT_OPT.startswith("fontfile=") and FONT_OPT.endswith(":")
+    assert "fontfile=" in FONT_OPT
 else:
-    assert FONT_OPT == ""  # falls back to fontconfig default
-print("font resolution OK ->", FONT_BOLD or "(fontconfig default)")
+    assert "fontfile=" not in FONT_OPT  # falls back to fontconfig default
+assert FONT_OPT.startswith("expansion=none")  # literal '%' in captions is safe
+print("font/escaping OK ->", FONT_BOLD or "(fontconfig default)")
 
 # Project status vocabulary: intermediate state used by create/reanalyze flows.
 from models import Project  # noqa: E402

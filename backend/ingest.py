@@ -11,6 +11,7 @@ import numpy as np
 import yt_dlp
 from youtube_transcript_api import YouTubeTranscriptApi
 
+from ffutil import filter_quote
 from models import (
     COOKIES_FILE,
     DEMOS_DIR,
@@ -39,14 +40,10 @@ def _resolve_bold_font() -> str:
     return ""
 
 
-def _filter_path(path: str) -> str:
-    """Escape a filesystem path for use inside an ffmpeg filter string."""
-    return path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
-
-
 FONT_BOLD = _resolve_bold_font()
-# drawtext option fragment: an escaped fontfile clause, or empty (fontconfig default)
-FONT_OPT = f"fontfile={_filter_path(FONT_BOLD)}:" if FONT_BOLD else ""
+# drawtext option fragment: an escaped fontfile clause, or empty (fontconfig default).
+# expansion=none keeps literal '%' in captions from being parsed as expansion syntax.
+FONT_OPT = f"expansion=none:fontfile={filter_quote(FONT_BOLD)}:" if FONT_BOLD else "expansion=none:"
 
 
 class YouTubeBlockedError(Exception):
@@ -450,54 +447,51 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
 
     if not out_video.exists() or out_video.stat().st_size < 100_000:
         # Build rich 1920x1080 (full HD) studio video with dual speaker panels + live topic badge + modulated speech-cadence audio
-        # Escaping helper for drawtext
-        def esc(s: str) -> str:
-            return s.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-
-        left_lbl = esc(cfg["left_speaker"])
-        right_lbl = esc(cfg["right_speaker"])
-        title_lbl = esc(cfg["title"][:48])
-        chan_lbl = esc(cfg["channel_name"])
+        left_lbl = cfg["left_speaker"]
+        right_lbl = cfg["right_speaker"]
+        title_lbl = cfg["title"][:48]
+        chan_lbl = cfg["channel_name"]
 
         # Dynamic drawtext per segment for live studio teleprompter/topic feel
         seg_filters = []
         for idx, (st, en, txt) in enumerate(cfg["segments"]):
-            short_topic = esc(txt[:54] + ("..." if len(txt) > 54 else ""))
+            short_topic = txt[:54] + ("..." if len(txt) > 54 else "")
+            enable = filter_quote(f"between(t,{st},{en})")
             active_side = "LEFT" if idx % 2 == 0 else "RIGHT"
             # Subtle active glow box on speaking side
             if active_side == "LEFT":
                 seg_filters.append(
-                    f"drawbox=x=90:y=165:w=840:h=645:color=0x7C5CFC@0.22:t=fill:enable='between(t,{st},{en})'"
+                    f"drawbox=x=90:y=165:w=840:h=645:color=0x7C5CFC@0.22:t=fill:enable={enable}"
                 )
             else:
                 seg_filters.append(
-                    f"drawbox=x=990:y=165:w=840:h=645:color=0x22D3EE@0.22:t=fill:enable='between(t,{st},{en})'"
+                    f"drawbox=x=990:y=165:w=840:h=645:color=0x22D3EE@0.22:t=fill:enable={enable}"
                 )
             seg_filters.append(
-                f"drawtext={FONT_OPT}text='{short_topic}':fontcolor=white:fontsize=33:"
-                f"x=(w-text_w)/2:y=918:enable='between(t,{st},{en})'"
+                f"drawtext={FONT_OPT}text={filter_quote(short_topic)}:fontcolor=white:fontsize=33:"
+                f"x=(w-text_w)/2:y=918:enable={enable}"
             )
 
         vf_parts = [
             "drawbox=x=0:y=0:w=1920:h=1080:color=0x0D101B:t=fill",
             # Studio header bar
             "drawbox=x=0:y=0:w=1920:h=117:color=0x141829:t=fill",
-            f"drawtext={FONT_OPT}text='{chan_lbl}':fontcolor=0x22D3EE:fontsize=30:x=90:y=42",
-            f"drawtext={FONT_OPT}text='{title_lbl}':fontcolor=white:fontsize=33:x=495:y=39",
+            f"drawtext={FONT_OPT}text={filter_quote(chan_lbl)}:fontcolor=0x22D3EE:fontsize=30:x=90:y=42",
+            f"drawtext={FONT_OPT}text={filter_quote(title_lbl)}:fontcolor=white:fontsize=33:x=495:y=39",
             # Left speaker panel
             "drawbox=x=90:y=165:w=840:h=645:color=0x191F36:t=fill",
             "drawbox=x=90:y=165:w=840:h=645:color=0x7C5CFC@0.55:t=5",
             # Stylized speaker silhouette Left
             "drawbox=x=413:y=278:w=195:h=195:color=0x7C5CFC:t=fill",
             "drawbox=x=330:y=503:w=360:h=225:color=0x4C35B5:t=fill",
-            f"drawtext={FONT_OPT}text='{left_lbl}':fontcolor=white:fontsize=33:x=150:y=203",
+            f"drawtext={FONT_OPT}text={filter_quote(left_lbl)}:fontcolor=white:fontsize=33:x=150:y=203",
             # Right speaker panel
             "drawbox=x=990:y=165:w=840:h=645:color=0x162235:t=fill",
             "drawbox=x=990:y=165:w=840:h=645:color=0x22D3EE@0.55:t=5",
             # Stylized speaker silhouette Right
             "drawbox=x=1313:y=278:w=195:h=195:color=0x22D3EE:t=fill",
             "drawbox=x=1230:y=503:w=360:h=225:color=0x0E7490:t=fill",
-            f"drawtext={FONT_OPT}text='{right_lbl}':fontcolor=white:fontsize=33:x=1050:y=203",
+            f"drawtext={FONT_OPT}text={filter_quote(right_lbl)}:fontcolor=white:fontsize=33:x=1050:y=203",
             # Lower third bar
             "drawbox=x=90:y=870:w=1740:h=144:color=0x131726@0.95:t=fill",
             "drawbox=x=90:y=870:w=12:h=144:color=0x7C5CFC:t=fill",

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import shlex
 import subprocess
 from pathlib import Path
 from typing import Callable, List, Optional
 
+from ffutil import filter_quote
 from models import Clip, EXPORTS_DIR, TranscriptSegment, WordTiming
 
 # Vertical export presets. Every render honors a hard 1080x1920 full-HD floor.
@@ -257,9 +257,9 @@ def export_clip_mp4(
             )
 
     if has_ass:
-        # Use shlex.quote to safely escape the path for filtergraph interpolation
-        safe_ass = shlex.quote(str(ass_path))
-        filter_graph += f";[vbase]ass='{safe_ass}'[vout]"
+        # filter_quote survives FFmpeg 4.x-9.x option parsing on all platforms
+        # (shlex.quote breaks on Windows drive-letter colons with modern FFmpeg).
+        filter_graph += f";[vbase]ass=filename={filter_quote(str(ass_path))}[vout]"
     else:
         filter_graph += ";[vbase]null[vout]"
 
