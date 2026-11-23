@@ -22,7 +22,7 @@ AI-powered long-form YouTube & video clipping platform that turns podcasts, keyn
 
 ### Prerequisites
 - **FFmpeg** installed and on PATH (`ffmpeg -version` to verify)
-- **Python 3.10+**
+- **Python 3.10–3.13** (3.14 is not yet supported by the pinned `youtube-transcript-api`/`numpy`/`faster-whisper` wheels)
 - **Node.js 20+** (for frontend build)
 
 ### Quick Start
@@ -207,6 +207,7 @@ MIT — Free for personal and commercial use.
 | Issue | Fix |
 |-------|-----|
 | `ffmpeg not found` | Install FFmpeg and ensure it's on PATH |
+| `Could not find a version that satisfies the requirement youtube-transcript-api==1.0.0` (or similar "requires a different python version") | You're on Python 3.14+. Install Python 3.12 (`winget install Python.Python.3.12`), recreate the venv with `py -3.12 -m venv venv`, and reinstall requirements |
 | `ModuleNotFoundError: faster_whisper` | `pip install -r backend/requirements.txt` |
 | YouTube download fails with "Sign in to confirm" | Add cookies.txt in Settings, or use Upload/Demo mode |
 | Frontend shows blank page | Run `npm run build` in `frontend/`, then restart backend |
