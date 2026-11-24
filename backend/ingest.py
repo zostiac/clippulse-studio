@@ -67,14 +67,15 @@ def probe_video(video_path: Path) -> Tuple[float, int, int]:
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     info = json.loads(res.stdout)
     duration = float(info.get("format", {}).get("duration", 0.0) or 0.0)
-    width, height = 1920, 1080
-    for s in info.get("streams", []):
-        if s.get("codec_type") == "video":
-            width = int(s.get("width", 1920) or 1920)
-            height = int(s.get("height", 1080) or 1080)
-            if duration <= 0 and s.get("duration"):
-                duration = float(s["duration"])
-            break
+    video_stream = next((stream for stream in info.get("streams", []) if stream.get("codec_type") == "video"), None)
+    if video_stream is None:
+        raise ValueError("No video stream found.")
+    width = int(video_stream.get("width", 0) or 0)
+    height = int(video_stream.get("height", 0) or 0)
+    if duration <= 0 and video_stream.get("duration"):
+        duration = float(video_stream["duration"])
+    if duration <= 0 or width <= 0 or height <= 0:
+        raise ValueError("Video metadata is incomplete or invalid.")
     return duration, width, height
 
 
