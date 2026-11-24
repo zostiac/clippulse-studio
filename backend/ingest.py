@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -561,7 +562,7 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             "+0.05*sin(2*PI*320*t)*(0.4+0.6*sin(2*PI*1.5*t))"
         )
 
-        temp_video = out_video.with_name(f"{out_video.stem}.tmp.mp4")
+        temp_video = out_video.with_name(f"{out_video.stem}.{uuid.uuid4().hex}.tmp.mp4")
         temp_video.unlink(missing_ok=True)
         cmd = [
             FFMPEG_BIN,
