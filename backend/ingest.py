@@ -523,7 +523,7 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             "-c:v",
             "libx264",
             "-preset",
-            "veryfast",
+            "ultrafast",
             "-pix_fmt",
             "yuv420p",
             "-c:a",
