@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
+from ffutil import FFMPEG_BIN, FFPROBE_BIN
+
 from models import (
     AppSettings,
     Clip,
@@ -76,19 +78,21 @@ def _get_local_whisper(model_name: str):
 def _extract_audio(video_path: Path, out_args: List[str], out_path: Path) -> None:
     """Extract mono 16 kHz audio with ffmpeg, with diagnosable errors."""
     probe = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
+        [FFPROBE_BIN, "-v", "error", "-select_streams", "a", "-show_entries",
          "stream=index", "-of", "csv=p=0", str(video_path)],
-        capture_output=True, text=True,
+        capture_output=True, text=True, timeout=30,
     )
     if probe.returncode == 0 and not probe.stdout.strip():
         raise RuntimeError(
             "This video has no audio track, so there is nothing to transcribe. "
             "Upload a .srt/.vtt subtitle file or paste a transcript with the video instead."
         )
-    cmd = ["ffmpeg", "-y", "-i", str(video_path), "-vn", "-ac", "1", "-ar", "16000"]
+    cmd = [FFMPEG_BIN, "-y", "-i", str(video_path), "-vn", "-ac", "1", "-ar", "16000"]
     cmd += out_args + [str(out_path)]
     try:
-        subprocess.run(cmd, capture_output=True, check=True)
+        subprocess.run(cmd, capture_output=True, check=True, timeout=180)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Audio extraction timed out. Try a shorter video or a subtitle file.") from exc
     except FileNotFoundError as exc:
         raise RuntimeError("FFmpeg not found on PATH. Install FFmpeg and restart the server.") from exc
     except subprocess.CalledProcessError as exc:
