@@ -678,7 +678,7 @@ async def api_create_upload(
             duration=round(duration, 2),
             width=width,
             height=height,
-            status="analyzing",
+            status="ingesting",
             transcript=transcript,
             energy_peaks=energy,
         )
@@ -731,7 +731,7 @@ def api_update_transcript(project_id: str, payload: UpdateTranscriptRequest):
         proj = load_project(project_id)
         if not proj:
             raise HTTPException(status_code=404, detail="Project not found")
-        if proj.status == "analyzing" or any(item.export_status == "rendering" for item in proj.clips):
+        if proj.status in {"ingesting", "analyzing"} or any(item.export_status == "rendering" for item in proj.clips):
             raise HTTPException(status_code=409, detail="Wait for analysis and exports to finish before editing the transcript.")
         updated: List[TranscriptSegment] = []
         for seg in payload.segments:
@@ -847,7 +847,7 @@ def api_delete_clip(project_id: str, clip_id: str):
         proj = load_project(project_id)
         if not proj:
             raise HTTPException(status_code=404, detail="Project not found")
-        if proj.status == "analyzing":
+        if proj.status in {"ingesting", "analyzing"}:
             raise HTTPException(status_code=409, detail="Wait for analysis to finish before deleting clips.")
         target = next((item for item in proj.clips if item.id == clip_id), None)
         if target and target.export_status == "rendering":
@@ -933,7 +933,7 @@ def api_export_clip(project_id: str, clip_id: str):
         proj = load_project(project_id)
         if not proj:
             raise HTTPException(status_code=404, detail="Project not found")
-        if proj.status == "analyzing":
+        if proj.status in {"ingesting", "analyzing"}:
             raise HTTPException(status_code=409, detail="Wait for analysis to finish before exporting clips.")
         clip = next((item for item in proj.clips if item.id == clip_id), None)
         if not clip:
@@ -967,7 +967,7 @@ def api_export_all(project_id: str):
         proj = load_project(project_id)
         if not proj:
             raise HTTPException(status_code=404, detail="Project not found")
-        if proj.status == "analyzing":
+        if proj.status in {"ingesting", "analyzing"}:
             raise HTTPException(status_code=409, detail="Wait for analysis to finish before exporting clips.")
         queued_ids = []
         for item in proj.clips:
