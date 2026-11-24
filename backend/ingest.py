@@ -11,7 +11,7 @@ import numpy as np
 import yt_dlp
 from youtube_transcript_api import YouTubeTranscriptApi
 
-from ffutil import filter_quote
+from ffutil import FFMPEG_BIN, FFPROBE_BIN, filter_quote
 from models import (
     COOKIES_FILE,
     DEMOS_DIR,
@@ -92,33 +92,43 @@ def is_supported_video_bytes(head: bytes) -> bool:
 
 def probe_video(video_path: Path) -> Tuple[float, int, int]:
     cmd = [
-        "ffprobe",
+        FFPROBE_BIN,
         "-v",
-        "quiet",
+        "error",
         "-print_format",
         "json",
         "-show_format",
         "-show_streams",
         str(video_path),
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
+    except FileNotFoundError as exc:
+        raise RuntimeError("FFprobe was not found. Install FFmpeg or set CLIPPULSE_FFPROBE_PATH.") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Video probing timed out.") from exc
+
     info = json.loads(res.stdout)
+    video_stream = next(
+        (stream for stream in info.get("streams", []) if stream.get("codec_type") == "video"),
+        None,
+    )
+    if video_stream is None:
+        raise ValueError("The file does not contain a video stream.")
+    width = int(video_stream.get("width") or 0)
+    height = int(video_stream.get("height") or 0)
     duration = float(info.get("format", {}).get("duration", 0.0) or 0.0)
-    width, height = 1920, 1080
-    for s in info.get("streams", []):
-        if s.get("codec_type") == "video":
-            width = int(s.get("width", 1920) or 1920)
-            height = int(s.get("height", 1080) or 1080)
-            if duration <= 0 and s.get("duration"):
-                duration = float(s["duration"])
-            break
+    if duration <= 0:
+        duration = float(video_stream.get("duration") or 0.0)
+    if duration <= 0 or width <= 0 or height <= 0:
+        raise ValueError("The video stream has invalid duration or dimensions.")
     return duration, width, height
 
 
 def generate_thumbnail(video_path: Path, out_path: Path, duration: float) -> None:
     seek = min(3.0, max(0.2, duration * 0.2))
     cmd = [
-        "ffmpeg",
+        FFMPEG_BIN,
         "-y",
         "-ss",
         f"{seek:.2f}",
@@ -150,7 +160,7 @@ def compute_energy_peaks(video_path: Path, bins: int = 120) -> List[float]:
         "s16le",
         "pipe:1",
     ]
-    res = subprocess.run(cmd, capture_output=True, check=False)
+    res = subprocess.run(cmd, capture_output=True, check=False, timeout=300)
     raw = res.stdout
     if not raw or len(raw) < 200:
         return [0.35] * bins
@@ -278,21 +288,24 @@ def parse_plain_transcript(text: str, duration: float) -> List[TranscriptSegment
     sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+|\n+", text.strip()) if s.strip()]
     if not sentences:
         return []
-    total_chars = sum(len(s) for s in sentences)
-    dur = max(duration, len(sentences) * 2.5)
+    # Keep transcript timestamps inside the actual source duration. The old
+    # 1.4-second minimum per sentence pushed long pasted transcripts beyond the video.
+    sentences = sentences[:10_000]
+    total_chars = sum(len(sentence) for sentence in sentences)
+    dur = max(0.001, float(duration))
     cursor = 0.0
     segs: List[TranscriptSegment] = []
-    for sent in sentences:
-        seg_dur = max(1.4, dur * (len(sent) / max(1, total_chars)))
-        end = min(dur, cursor + seg_dur)
-        segs.append(
-            TranscriptSegment(
-                start=round(cursor, 3),
-                end=round(end, 3),
-                text=sent,
-                words=distribute_words(sent, cursor, end),
+    for index, sentence in enumerate(sentences):
+        end = dur if index == len(sentences) - 1 else cursor + dur * (len(sentence) / max(1, total_chars))
+        if end > cursor:
+            segs.append(
+                TranscriptSegment(
+                    start=cursor,
+                    end=end,
+                    text=sentence,
+                    words=distribute_words(sentence, cursor, end),
+                )
             )
-        )
         cursor = end
     return segs
 
