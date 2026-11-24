@@ -20,7 +20,7 @@ os.environ.setdefault("CLIPPULSE_MAX_UPLOAD_MB", "1")
 
 # --- unit checks -------------------------------------------------------------
 from exporter import RESOLUTION_PRESETS, resolve_output_size  # noqa: E402
-from ingest import is_supported_video_bytes  # noqa: E402
+from ingest import distribute_words, is_supported_video_bytes  # noqa: E402
 from models import AppSettings, ClipStyle, TranscriptionError  # noqa: E402
 
 assert resolve_output_size("1080x1920") == (1080, 1920)
@@ -37,6 +37,10 @@ assert is_supported_video_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 8)
 assert is_supported_video_bytes(b"\x1a\x45\xdf\xa3rest")
 assert not is_supported_video_bytes(b"<html><body>nope")
 assert not is_supported_video_bytes(b"\x89PNG\r\n\x1a\n")
+short_words = distribute_words("one two three", 0.0, 0.1)
+assert len(short_words) == 3
+assert all(word.end > word.start for word in short_words)
+assert short_words[-1].end <= 0.1
 
 # Cross-platform font plumbing and filter escaping for the demo generator.
 from ffutil import filter_quote  # noqa: E402
@@ -59,7 +63,7 @@ from models import Project  # noqa: E402
 
 Project(title="x", source_type="demo", status="analyzing")
 # Storage lock must be re-entrant because export progress updates save while locked.
-from models import _store_lock, get_project_dir, load_project, delete_project  # noqa: E402
+from models import _store_lock, get_project_dir, load_project, delete_project, EXPORTS_DIR  # noqa: E402
 
 try:
     get_project_dir("../outside")
@@ -115,6 +119,25 @@ assert r.status_code == 200, r.text
 caps = r.json()["capabilities"]
 assert "ffmpeg" in caps and "video_pipeline_ready" in caps
 print("health OK ->", caps)
+
+# API and media are local-only unless a shared token is configured.
+remote_client = TestClient(main.app, client=("203.0.113.10", 50000))
+assert remote_client.get("/api/projects").status_code == 503
+assert remote_client.get("/media/exports/not-a-real-file.mp4").status_code == 503
+assert remote_client.get("/api/health").status_code == 200
+print("remote API/media access guard OK")
+
+# Range requests support suffix ranges (used by video seeking).
+range_path = EXPORTS_DIR / "range-smoke.bin"
+try:
+    range_path.write_bytes(b"0123456789")
+    r = client.get("/media/exports/range-smoke.bin", headers={"Range": "bytes=-4"})
+    assert r.status_code == 206 and r.content == b"6789", (r.status_code, r.content)
+    r = client.get("/media/exports/range-smoke.bin", headers={"Range": "bytes=20-"})
+    assert r.status_code == 416, (r.status_code, r.text)
+finally:
+    range_path.unlink(missing_ok=True)
+print("media range handling OK")
 
 # Garbage bytes rejected by container sniff.
 files = {"file": ("evil.mp4", io.BytesIO(b"<html>not a video" * 50), "video/mp4")}
