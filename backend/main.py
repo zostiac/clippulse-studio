@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hmac
 import io
+import ipaddress
+import logging
 import mimetypes
 import os
 import shutil
@@ -9,6 +12,7 @@ import uuid
 import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,15 +56,50 @@ from models import (
     _store_lock,
 )
 
-app = FastAPI(title="ClipPulse Studio API", version="1.0.0")
+app = FastAPI(title="ClipPulse Studio API", version="1.1.0")
+logger = logging.getLogger("clippulse")
+API_TOKEN = os.getenv("CLIPPULSE_API_TOKEN", "").strip()
+MAX_UPLOAD_BYTES = int(os.getenv("CLIPPULSE_MAX_UPLOAD_BYTES", str(500 * 1024 * 1024)))
+MAX_SUBTITLE_BYTES = int(os.getenv("CLIPPULSE_MAX_SUBTITLE_BYTES", str(5 * 1024 * 1024)))
+ALLOWED_ORIGINS = [
+    item.strip()
+    for item in os.getenv(
+        "CLIPPULSE_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000",
+    ).split(",")
+    if item.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Token"],
 )
+
+@app.middleware("http")
+async def protect_api(request: Request, call_next):
+    if request.url.path.startswith("/api/") and request.url.path != "/api/health":
+        if API_TOKEN:
+            supplied = request.headers.get("x-api-token", "")
+            if not hmac.compare_digest(supplied, API_TOKEN):
+                return JSONResponse(status_code=401, content={"detail": "Valid API token required."})
+        else:
+            host = request.client.host if request.client else ""
+            try:
+                local_request = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                local_request = False
+            if not local_request:
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "Remote API access is disabled. Configure CLIPPULSE_API_TOKEN first."},
+                )
+    return await call_next(request)
+
+_EXPORT_LOCK = threading.Lock()
+_ACTIVE_EXPORTS: set[str] = set()
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +364,13 @@ def api_create_demo(payload: DemoRequest):
 @app.post("/api/projects/youtube")
 def api_create_youtube(payload: YouTubeRequest):
     url = payload.url.strip()
-    if not url or ("youtube.com" not in url and "youtu.be" not in url):
+    parsed_url = urlsplit(url)
+    if (
+        parsed_url.scheme not in {"http", "https"}
+        or parsed_url.hostname not in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
+        or parsed_url.username
+        or parsed_url.password
+    ):
         raise HTTPException(status_code=400, detail="Please enter a valid YouTube URL.")
 
     proj_id = f"proj_{uuid.uuid4().hex[:8]}"
@@ -395,73 +440,99 @@ async def api_create_upload(
     transcript_text: Optional[str] = Form(None),
     subtitle_file: Optional[UploadFile] = File(None),
 ):
+    filename = file.filename or "video.mp4"
+    ext = Path(filename).suffix.lower()
+    if ext not in {".mp4", ".mov", ".webm", ".mkv", ".m4v"}:
+        raise HTTPException(status_code=415, detail="Unsupported video format. Upload MP4, MOV, WEBM, MKV, or M4V.")
+
     proj_id = f"proj_{uuid.uuid4().hex[:8]}"
     pdir = get_project_dir(proj_id)
-
-    ext = Path(file.filename or "video.mp4").suffix.lower() or ".mp4"
-    if ext not in {".mp4", ".mov", ".webm", ".mkv", ".m4v"}:
-        ext = ".mp4"
     dest_video = pdir / f"source{ext}"
-
-    with dest_video.open("wb") as out_f:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            out_f.write(chunk)
+    total_bytes = 0
 
     try:
+        with dest_video.open("wb") as out_f:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Video exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload limit.",
+                    )
+                out_f.write(chunk)
+
+        if total_bytes == 0:
+            raise HTTPException(status_code=400, detail="The uploaded video is empty.")
+
         duration, width, height = probe_video(dest_video)
+        if duration <= 0 or width <= 0 or height <= 0:
+            raise HTTPException(status_code=400, detail="The uploaded file does not contain a valid video stream.")
+
+        transcript: List[TranscriptSegment] = []
+        if subtitle_file is not None:
+            raw_sub_bytes = await subtitle_file.read(MAX_SUBTITLE_BYTES + 1)
+            if len(raw_sub_bytes) > MAX_SUBTITLE_BYTES:
+                raise HTTPException(status_code=413, detail="Subtitle file exceeds the 5 MB limit.")
+            raw_sub = raw_sub_bytes.decode("utf-8", errors="ignore")
+            transcript = parse_subtitle_text(raw_sub)
+        elif transcript_text and transcript_text.strip():
+            if len(transcript_text.encode("utf-8")) > MAX_SUBTITLE_BYTES:
+                raise HTTPException(status_code=413, detail="Transcript text exceeds the 5 MB limit.")
+            raw_t = transcript_text.strip()
+            if "-->" in raw_t:
+                transcript = parse_subtitle_text(raw_t)
+            else:
+                transcript = parse_plain_transcript(raw_t, duration)
+
+        thumb_path = pdir / "thumb.jpg"
+        generate_thumbnail(dest_video, thumb_path, duration)
+        energy = compute_energy_peaks(dest_video)
+
+        clean_title = (title or "").strip() or Path(filename).stem.replace("_", " ").replace("-", " ")
+        settings = load_settings()
+        transcript, clips, engine_used = analyze_project(
+            proj_id,
+            clean_title,
+            dest_video,
+            duration,
+            transcript,
+            energy,
+            settings,
+        )
+
+        project = Project(
+            id=proj_id,
+            title=clean_title,
+            source_type="upload",
+            channel_name="Local Upload",
+            video_path=str(dest_video),
+            video_url=f"/media/projects/{proj_id}/{dest_video.name}",
+            thumbnail_url=f"/media/projects/{proj_id}/thumb.jpg" if thumb_path.exists() else None,
+            duration=round(duration, 2),
+            width=width,
+            height=height,
+            status="ready",
+            transcript=transcript,
+            clips=clips,
+            energy_peaks=energy,
+            ai_engine_used=engine_used,
+        )
+        save_project(project)
+        return project.model_dump()
+    except HTTPException:
+        shutil.rmtree(pdir, ignore_errors=True)
+        raise
     except Exception as exc:
         shutil.rmtree(pdir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail=f"Could not read video file: {exc}")
-
-    transcript: List[TranscriptSegment] = []
-    if subtitle_file is not None:
-        raw_sub = (await subtitle_file.read()).decode("utf-8", errors="ignore")
-        transcript = parse_subtitle_text(raw_sub)
-    elif transcript_text and transcript_text.strip():
-        raw_t = transcript_text.strip()
-        if "-->" in raw_t:
-            transcript = parse_subtitle_text(raw_t)
-        else:
-            transcript = parse_plain_transcript(raw_t, duration)
-
-    thumb_path = pdir / "thumb.jpg"
-    generate_thumbnail(dest_video, thumb_path, duration)
-    energy = compute_energy_peaks(dest_video)
-
-    clean_title = (title or "").strip() or Path(file.filename or "Uploaded Video").stem.replace("_", " ").replace("-", " ")
-    settings = load_settings()
-    transcript, clips, engine_used = analyze_project(
-        proj_id,
-        clean_title,
-        dest_video,
-        duration,
-        transcript,
-        energy,
-        settings,
-    )
-
-    project = Project(
-        id=proj_id,
-        title=clean_title,
-        source_type="upload",
-        channel_name="Local Upload",
-        video_path=str(dest_video),
-        video_url=f"/media/projects/{proj_id}/{dest_video.name}",
-        thumbnail_url=f"/media/projects/{proj_id}/thumb.jpg" if thumb_path.exists() else None,
-        duration=round(duration, 2),
-        width=width,
-        height=height,
-        status="ready",
-        transcript=transcript,
-        clips=clips,
-        energy_peaks=energy,
-        ai_engine_used=engine_used,
-    )
-    save_project(project)
-    return project.model_dump()
+        logger.exception("Video upload processing failed")
+        raise HTTPException(status_code=400, detail="Could not process the uploaded video. Check that it is a supported, valid video file.") from exc
+    finally:
+        await file.close()
+        if subtitle_file is not None:
+            await subtitle_file.close()
 
 
 @app.post("/api/projects/{project_id}/reanalyze")
@@ -588,18 +659,24 @@ def api_delete_clip(project_id: str, clip_id: str):
 
 
 def _run_export_job(project_id: str, clip_id: str) -> None:
-    # Capture initial project data under lock
-    with _store_lock:
-        proj = load_project(project_id)
-        if not proj:
+    export_key = f"{project_id}:{clip_id}"
+    with _EXPORT_LOCK:
+        if export_key in _ACTIVE_EXPORTS:
             return
-        clip = next((c for c in proj.clips if c.id == clip_id), None)
-        if not clip:
-            return
-        video_path = Path(proj.video_path)
-        src_w = proj.width
-        src_h = proj.height
-        transcript = proj.transcript
+        _ACTIVE_EXPORTS.add(export_key)
+
+    try:
+        with _store_lock:
+            proj = load_project(project_id)
+            if not proj:
+                return
+            clip = next((c for c in proj.clips if c.id == clip_id), None)
+            if not clip:
+                return
+            video_path = Path(proj.video_path)
+            src_w = proj.width
+            src_h = proj.height
+            transcript = proj.transcript
 
     def update_progress(pct: int) -> None:
         with _store_lock:
@@ -640,6 +717,9 @@ def _run_export_job(project_id: str, clip_id: str) -> None:
                         c.export_status = "error"
                         c.export_error = str(exc)
                 save_project(p)
+    finally:
+        with _EXPORT_LOCK:
+            _ACTIVE_EXPORTS.discard(export_key)
 
 
 @app.post("/api/projects/{project_id}/clips/{clip_id}/export")
@@ -651,10 +731,19 @@ def api_export_clip(project_id: str, clip_id: str):
     if not clip:
         raise HTTPException(status_code=404, detail="Clip not found")
 
-    clip.export_status = "rendering"
-    clip.export_progress = 5
-    clip.export_error = None
-    save_project(proj)
+    with _store_lock:
+        proj = load_project(project_id)
+        if not proj:
+            raise HTTPException(status_code=404, detail="Project not found")
+        clip = next((c for c in proj.clips if c.id == clip_id), None)
+        if not clip:
+            raise HTTPException(status_code=404, detail="Clip not found")
+        if clip.export_status == "rendering":
+            raise HTTPException(status_code=409, detail="This clip is already being exported.")
+        clip.export_status = "rendering"
+        clip.export_progress = 5
+        clip.export_error = None
+        save_project(proj)
 
     t = threading.Thread(target=_run_export_job, args=(project_id, clip_id), daemon=True)
     t.start()
@@ -726,7 +815,7 @@ def serve_project_media(project_id: str, filename: str, request: Request):
     safe_project_id = Path(project_id).name
     safe_filename = Path(filename).name
     safe_path = (PROJECTS_DIR / safe_project_id / safe_filename).resolve()
-    if not str(safe_path).startswith(str(PROJECTS_DIR.resolve())):
+    if not safe_path.is_relative_to(PROJECTS_DIR.resolve()):
         raise HTTPException(status_code=403, detail="Forbidden")
     return _stream_file_range(safe_path, request)
 
@@ -734,7 +823,7 @@ def serve_project_media(project_id: str, filename: str, request: Request):
 @app.get("/media/exports/{filename}")
 def serve_export_media(filename: str, request: Request, download: int = 0):
     safe_path = (EXPORTS_DIR / Path(filename).name).resolve()
-    if not str(safe_path).startswith(str(EXPORTS_DIR.resolve())):
+    if not safe_path.is_relative_to(EXPORTS_DIR.resolve()):
         raise HTTPException(status_code=403, detail="Forbidden")
     return _stream_file_range(safe_path, request, download_name=safe_path.name if download else None)
 
