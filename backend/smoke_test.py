@@ -13,6 +13,7 @@ import io
 import os
 import sys
 import time
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -89,6 +90,27 @@ with _store_lock:
         pass
 print("storage path/lock checks OK")
 print("unit checks OK")
+
+# A truncated cached demo must be regenerated, and only a probed MP4 may be published.
+import ingest as _ingest  # noqa: E402
+
+if __import__("shutil").which(FFMPEG_BIN) and __import__("shutil").which(FFPROBE_BIN):
+    with tempfile.TemporaryDirectory() as demo_td:
+        original_demos_dir = _ingest.DEMOS_DIR
+        _ingest.DEMOS_DIR = Path(demo_td)
+        try:
+            corrupt_demo = Path(demo_td) / "podcast_creators_1080p.mp4"
+            corrupt_demo.write_bytes(b"\x00" * 150_000)  # large enough to fool the old size-only check
+            demo_path, _, _ = _ingest.ensure_demo_project_assets("podcast_creators")
+            assert demo_path == corrupt_demo and demo_path.stat().st_size > 100_000
+            demo_duration, demo_width, demo_height = probe_video(demo_path)
+            assert demo_duration > 0 and demo_width == 1920 and demo_height == 1080
+            assert not list(Path(demo_td).glob("*.tmp.mp4"))
+        finally:
+            _ingest.DEMOS_DIR = original_demos_dir
+    print("corrupt demo cache recovery and MP4 validation OK")
+else:
+    print("demo cache recovery SKIPPED (ffmpeg/ffprobe not on PATH)")
 
 # --- transcription failure must surface (H2) --------------------------------
 import analyzer  # noqa: E402
