@@ -1,28 +1,65 @@
 async function req(url, options = {}) {
-  const { timeoutMs = 30000, ...fetchOptions } = options;
+  const { timeoutMs = 30000, signal: externalSignal, ...fetchOptions } = options;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort(externalSignal?.reason);
+
+  if (externalSignal?.aborted) abortFromCaller();
+  else externalSignal?.addEventListener("abort", abortFromCaller, { once: true });
+
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
   try {
     const res = await fetch(url, { ...fetchOptions, signal: controller.signal });
     const contentType = res.headers.get("content-type") || "";
-    const isJson = contentType.includes("application/json");
-    const data = isJson ? await res.json() : await res.text();
+    let data = null;
+
+    if (contentType.includes("application/json")) {
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error("The server returned an invalid response. Please try again.");
+      }
+    } else {
+      data = await res.text();
+    }
+
     if (!res.ok) {
-      const err = new Error((data && data.detail) || `Request failed (${res.status})`);
+      const detail = data && typeof data === "object" ? data.detail : null;
+      const message = Array.isArray(detail)
+        ? detail.map((item) => item.msg || String(item)).join("; ")
+        : typeof detail === "string"
+        ? detail
+        : `Request failed (${res.status})`;
+      const err = new Error(message);
       err.status = res.status;
       err.data = data;
       throw err;
     }
     return data;
   } catch (e) {
-    if (e && e.name === "AbortError") {
-      throw new Error(
-        `Request timed out after ${Math.round(timeoutMs / 1000)}s. The server may still be working — refresh the page to see the result.`
+    if (timedOut) {
+      const err = new Error(
+        `Request timed out after ${Math.round(timeoutMs / 1000)}s. The server may still be processing it; check the project list before retrying.`
       );
+      err.name = "TimeoutError";
+      throw err;
+    }
+    if (e && e.name === "AbortError") {
+      const err = new Error("Request cancelled.");
+      err.name = "AbortError";
+      throw err;
+    }
+    if (e instanceof TypeError && /fetch/i.test(e.message)) {
+      throw new Error("Cannot reach ClipPulse Studio. Check that the backend is running and try again.");
     }
     throw e;
   } finally {
     clearTimeout(timeout);
+    externalSignal?.removeEventListener("abort", abortFromCaller);
   }
 }
 
@@ -46,8 +83,8 @@ export const api = {
   clearCookies: () => req("/api/settings/cookies", { method: "DELETE" }),
 
   listProjects: () => req("/api/projects"),
-  getProject: (id) => req(`/api/projects/${id}`),
-  deleteProject: (id) => req(`/api/projects/${id}`, { method: "DELETE" }),
+  getProject: (id) => req(`/api/projects/${encodeURIComponent(id)}`),
+  deleteProject: (id) => req(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   createDemo: (demo_key) =>
     req("/api/projects/demo", {
@@ -73,37 +110,37 @@ export const api = {
     }),
 
   reanalyzeProject: (id) =>
-    req(`/api/projects/${id}/reanalyze`, { method: "POST", timeoutMs: ANALYSIS_TIMEOUT_MS }),
+    req(`/api/projects/${encodeURIComponent(id)}/reanalyze`, { method: "POST", timeoutMs: ANALYSIS_TIMEOUT_MS }),
 
   updateTranscript: (id, segments) =>
-    req(`/api/projects/${id}/transcript`, {
+    req(`/api/projects/${encodeURIComponent(id)}/transcript`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ segments }),
     }),
 
   createClip: (projectId, payload) =>
-    req(`/api/projects/${projectId}/clips`, {
+    req(`/api/projects/${encodeURIComponent(projectId)}/clips`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
 
   updateClip: (projectId, clipId, payload) =>
-    req(`/api/projects/${projectId}/clips/${clipId}`, {
+    req(`/api/projects/${encodeURIComponent(projectId)}/clips/${encodeURIComponent(clipId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
 
   deleteClip: (projectId, clipId) =>
-    req(`/api/projects/${projectId}/clips/${clipId}`, { method: "DELETE" }),
+    req(`/api/projects/${encodeURIComponent(projectId)}/clips/${encodeURIComponent(clipId)}`, { method: "DELETE" }),
 
   exportClip: (projectId, clipId) =>
-    req(`/api/projects/${projectId}/clips/${clipId}/export`, { method: "POST" }),
+    req(`/api/projects/${encodeURIComponent(projectId)}/clips/${encodeURIComponent(clipId)}/export`, { method: "POST" }),
 
   exportAll: (projectId) =>
-    req(`/api/projects/${projectId}/export-all`, { method: "POST" }),
+    req(`/api/projects/${encodeURIComponent(projectId)}/export-all`, { method: "POST" }),
 };
 
 export function fmtTime(sec) {
