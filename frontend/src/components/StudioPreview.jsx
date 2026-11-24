@@ -63,15 +63,20 @@ export default function StudioPreview({
   const [safeZone, setSafeZone] = useState("none"); // none | yt | ig | tt
   const [previewMode, setPreviewMode] = useState("live"); // live | exported
 
-  // Reset to live preview if clip changes or export resets
+  // Return to the live editor when the selected clip or its export changes.
   useEffect(() => {
     setPreviewMode("live");
     setPlaying(false);
-    if (mainVideoRef.current && clip) {
-      mainVideoRef.current.currentTime = clip.start;
-      onTimeUpdate(clip.start);
-    }
-  }, [clip?.id]);
+  }, [clip?.id, clip?.export_status]);
+
+  // The exported MP4 timeline starts at zero; the source timeline starts at
+  // the absolute clip start. Re-seek whenever the preview source is swapped.
+  useEffect(() => {
+    if (!mainVideoRef.current || !clip) return;
+    mainVideoRef.current.currentTime = previewMode === "live" ? clip.start : 0;
+    if (auxVideoRef.current) auxVideoRef.current.currentTime = clip.start;
+    onTimeUpdate(clip.start);
+  }, [clip?.id, clip?.start, previewMode, onTimeUpdate]);
 
   // Expose seek function to parent (for transcript click-to-seek)
   useEffect(() => {
@@ -134,6 +139,17 @@ export default function StudioPreview({
       if (auxVideoRef.current) auxVideoRef.current.pause();
       setPlaying(false);
     }
+  }
+
+  function handleLiveEnded() {
+    const video = mainVideoRef.current;
+    if (previewMode === "live" && loopClip && clip && video) {
+      video.currentTime = clip.start;
+      if (auxVideoRef.current) auxVideoRef.current.currentTime = clip.start;
+      video.play().catch(() => setPlaying(false));
+      return;
+    }
+    setPlaying(false);
   }
 
   // Group words into active chunk for live captions
@@ -338,6 +354,7 @@ export default function StudioPreview({
                   src={project.video_url}
                   muted={muted}
                   playsInline
+                  onEnded={handleLiveEnded}
                   className="w-full h-full object-cover"
                   style={{ objectPosition: `${panPct}% center` }}
                 />
@@ -358,6 +375,7 @@ export default function StudioPreview({
                     src={project.video_url}
                     muted={muted}
                     playsInline
+                    onEnded={handleLiveEnded}
                     className="relative z-10 w-full h-full object-contain"
                   />
                 </>
@@ -372,6 +390,7 @@ export default function StudioPreview({
                       src={project.video_url}
                       muted={muted}
                       playsInline
+                      onEnded={handleLiveEnded}
                       className="w-full h-full object-cover object-left"
                     />
                   </div>
