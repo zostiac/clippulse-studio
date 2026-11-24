@@ -93,6 +93,19 @@ app.add_middleware(
 async def protect_api(request: Request, call_next):
     is_protected_path = request.url.path.startswith(("/api/", "/media/"))
     if is_protected_path and request.url.path != "/api/health" and request.method != "OPTIONS":
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                request_size = int(content_length)
+            except ValueError:
+                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header."})
+            max_request_size = (
+                MAX_UPLOAD_BYTES + MAX_SUBTITLE_BYTES + (2 * 1024 * 1024)
+                if request.url.path == "/api/projects/upload"
+                else max(20 * 1024 * 1024, MAX_SUBTITLE_BYTES + (2 * 1024 * 1024))
+            )
+            if request_size < 0 or request_size > max_request_size:
+                return JSONResponse(status_code=413, content={"detail": "Request body exceeds the configured size limit."})
         if API_TOKEN:
             supplied = request.headers.get("x-api-token", "")
             if not hmac.compare_digest(supplied, API_TOKEN):
