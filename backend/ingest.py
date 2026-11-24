@@ -15,6 +15,8 @@ from ffutil import FFMPEG_BIN, FFPROBE_BIN, filter_quote
 from models import (
     COOKIES_FILE,
     DEMOS_DIR,
+    MAX_UPLOAD_BYTES,
+    MAX_SUBTITLE_BYTES,
     TranscriptSegment,
     WordTiming,
 )
@@ -326,6 +328,11 @@ def ingest_youtube(url: str, project_dir: Path) -> Tuple[Path, dict, List[Transc
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        "max_filesize": MAX_UPLOAD_BYTES,
+        "socket_timeout": 20,
+        "retries": 2,
+        "fragment_retries": 2,
+        "concurrent_fragment_downloads": 2,
     }
     if COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10:
         ydl_opts["cookiefile"] = str(COOKIES_FILE)
@@ -352,12 +359,19 @@ def ingest_youtube(url: str, project_dir: Path) -> Tuple[Path, dict, List[Transc
         if not candidates:
             raise RuntimeError("Video downloaded but output file was not found.")
         video_path = candidates[0]
+    if video_path.stat().st_size > MAX_UPLOAD_BYTES:
+        video_path.unlink(missing_ok=True)
+        raise RuntimeError("Downloaded YouTube video exceeds the configured upload size limit.")
 
     # Parse subtitle file if downloaded
     transcript: List[TranscriptSegment] = []
     sub_files = list(project_dir.glob("*.vtt")) + list(project_dir.glob("*.srt"))
     if sub_files:
-        transcript = parse_subtitle_text(sub_files[0].read_text(encoding="utf-8", errors="ignore"))
+        subtitle_path = sub_files[0]
+        if subtitle_path.stat().st_size <= MAX_SUBTITLE_BYTES:
+            transcript = parse_subtitle_text(subtitle_path.read_text(encoding="utf-8-sig", errors="replace"))
+        else:
+            subtitle_path.unlink(missing_ok=True)
 
     if not transcript and video_id:
         try:
@@ -368,6 +382,8 @@ def ingest_youtube(url: str, project_dir: Path) -> Tuple[Path, dict, List[Transc
                     continue
                 st = float(item.start)
                 en = st + float(item.duration)
+                if st < 0 or en <= st:
+                    continue
                 transcript.append(
                     TranscriptSegment(
                         start=round(st, 3),
@@ -378,6 +394,7 @@ def ingest_youtube(url: str, project_dir: Path) -> Tuple[Path, dict, List[Transc
                 )
         except Exception:
             pass
+    transcript = transcript[:10_000]
 
     meta = {
         "title": info.get("title") or oembed.get("title") or "YouTube Video",
