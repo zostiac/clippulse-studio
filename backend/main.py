@@ -832,10 +832,18 @@ def api_update_clip(project_id: str, clip_id: str, payload: UpdateClipRequest):
             target.platform_meta = payload.platform_meta
 
         if payload.start is not None or payload.end is not None or payload.style is not None:
-            if target.export_status == "done":
+            if target.export_status in {"done", "error"}:
+                old_filename = target.export_filename
                 target.export_status = "idle"
                 target.export_progress = 0
+                target.export_error = None
+                target.export_filename = None
+                target.export_url = None
                 target.exported_at = None
+                if old_filename and Path(old_filename).name == old_filename:
+                    old_path = (EXPORTS_DIR / old_filename).resolve()
+                    if old_path.is_relative_to(EXPORTS_DIR.resolve()) and old_path.is_file():
+                        old_path.unlink(missing_ok=True)
 
         save_project(proj)
         return target.model_dump()
