@@ -144,7 +144,7 @@ def generate_thumbnail(video_path: Path, out_path: Path, duration: float) -> Non
         "3",
         str(out_path),
     ]
-    subprocess.run(cmd, capture_output=True, check=False)
+    subprocess.run(cmd, capture_output=True, check=False, timeout=60)
 
 
 def compute_energy_peaks(video_path: Path, bins: int = 120) -> List[float]:
@@ -535,7 +535,7 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
         )
 
         cmd = [
-            "ffmpeg",
+            FFMPEG_BIN,
             "-y",
             "-f",
             "lavfi",
@@ -562,7 +562,9 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             str(out_video),
         ]
         try:
-            subprocess.run(cmd, capture_output=True, check=True)
+            subprocess.run(cmd, capture_output=True, check=True, timeout=180)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Demo video generation timed out.") from exc
         except FileNotFoundError as exc:
             raise RuntimeError(
                 "FFmpeg not found on PATH. Install FFmpeg and restart the server."
