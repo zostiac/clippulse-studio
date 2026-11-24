@@ -58,6 +58,20 @@ print("font/escaping OK ->", FONT_BOLD or "(fontconfig default)")
 from models import Project  # noqa: E402
 
 Project(title="x", source_type="demo", status="analyzing")
+# Storage lock must be re-entrant because export progress updates save while locked.
+from models import _store_lock, get_project_dir, load_project, delete_project  # noqa: E402
+
+try:
+    get_project_dir("../outside")
+    raise AssertionError("project path traversal was accepted")
+except ValueError:
+    pass
+assert load_project("../outside") is None
+assert delete_project("../outside") is False
+with _store_lock:
+    with _store_lock:
+        pass
+print("storage path/lock checks OK")
 print("unit checks OK")
 
 # --- transcription failure must surface (H2) --------------------------------
@@ -94,7 +108,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 import main  # noqa: E402
 
-client = TestClient(main.app)
+client = TestClient(main.app, client=("127.0.0.1", 50000))
 
 r = client.get("/api/health")
 assert r.status_code == 200, r.text
@@ -105,8 +119,13 @@ print("health OK ->", caps)
 # Garbage bytes rejected by container sniff.
 files = {"file": ("evil.mp4", io.BytesIO(b"<html>not a video" * 50), "video/mp4")}
 r = client.post("/api/projects/upload", files=files)
-assert r.status_code == 400 and "Unsupported video format" in r.json()["detail"], r.text
+assert r.status_code == 400 and "Unsupported or empty video" in r.json()["detail"], r.text
 print("upload sniff OK ->", r.json()["detail"])
+
+# Hostname validation must reject lookalike domains before yt-dlp is called.
+r = client.post("/api/projects/youtube", json={"url": "https://youtube.com.evil.example/watch?v=abcdefghijk"})
+assert r.status_code == 400, (r.status_code, r.text)
+print("YouTube hostname validation OK")
 
 # Oversized upload rejected (limit 1 MB via env).
 files = {
