@@ -32,13 +32,11 @@ function getClipWords(transcript, start, end) {
       if (!tokens.length) continue;
       const s = Math.max(start, seg.start);
       const e = Math.min(end, seg.end);
-      const step = Math.max(0.15, (e - s) / tokens.length);
+      const step = Math.max(0, e - s) / tokens.length;
       tokens.forEach((tok, idx) => {
-        words.push({
-          word: tok,
-          start: s + idx * step,
-          end: s + (idx + 1) * step,
-        });
+        const wordStart = s + idx * step;
+        const wordEnd = idx === tokens.length - 1 ? e : s + (idx + 1) * step;
+        if (wordEnd > wordStart) words.push({ word: tok, start: wordStart, end: wordEnd });
       });
     }
   }
