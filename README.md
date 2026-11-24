@@ -43,7 +43,7 @@ npm run build
 
 # 4. Start unified FastAPI server on port 8000
 cd ../backend
-uvicorn main:app --host 0.0.0.0 --port 8000
+uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
 Open **http://localhost:8000** — the API serves the built React app automatically.
@@ -113,13 +113,23 @@ clippulse/
 | **Default Layout** | Smart 9:16 Crop / Blur-Fill 16:9 / Split Screen |
 | **YouTube Cookies** | Paste Netscape-format `cookies.txt` to bypass YouTube bot checks on cloud servers |
 
+### Local API security
+
+- The API is intended for local use by default. Requests from non-loopback clients are rejected unless `CLIPPULSE_API_TOKEN` is configured.
+- CORS uses an explicit local-origin allowlist. Add only the exact browser origins you trust with `CLIPPULSE_ALLOWED_ORIGINS`.
+- If you expose the app on a LAN or through a reverse proxy, use HTTPS, real user authentication, rate limiting, and have the trusted proxy inject `X-API-Token` on API requests. Do **not** put a shared token in a `VITE_*` variable or frontend bundle.
+- The development server binds to `127.0.0.1` by default. Set `VITE_DEV_HOST=0.0.0.0` only when you intentionally need LAN access and have secured the backend/proxy.
+- YouTube cookies are sensitive session credentials; store only your own cookies and keep the data directory private.
+
 ### Environment Variables (Optional)
 ```bash
 # Backend .env (create if needed)
 CLIPPULSE_DATA_DIR=./data          # Override data directory
 CLIPPULSE_FFMPEG_PATH=ffmpeg       # Custom ffmpeg binary path
-CLIPPULSE_MAX_UPLOAD_MB=1024       # Video upload size cap (default 1024 MB)
-CLIPPULSE_MAX_SUBTITLE_MB=5        # Subtitle upload size cap (default 5 MB)
+CLIPPULSE_MAX_UPLOAD_MB=1024       # Video upload size cap (1–4096 MB)
+CLIPPULSE_MAX_SUBTITLE_MB=5        # Subtitle/transcript cap (1–25 MB)
+CLIPPULSE_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+CLIPPULSE_API_TOKEN=               # Optional shared API token for remote API clients
 ```
 
 ---
