@@ -158,7 +158,7 @@ def generate_thumbnail(video_path: Path, out_path: Path, duration: float) -> Non
 
 def compute_energy_peaks(video_path: Path, bins: int = 120) -> List[float]:
     cmd = [
-        "ffmpeg",
+        FFMPEG_BIN,
         "-v",
         "quiet",
         "-i",
