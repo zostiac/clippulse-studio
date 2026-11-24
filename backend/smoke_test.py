@@ -1,4 +1,4 @@
-"""Regression smoke tests for the 2026-11-23 fix batch.
+"""Regression smoke tests for the post-merge hardening and frontend reliability batch.
 
 Run from the repo root or this directory after installing requirements:
 
@@ -54,7 +54,7 @@ pasted = parse_plain_transcript("First sentence. Second sentence.", 1.5)
 assert pasted and pasted[-1].end <= 1.5
 
 # Cross-platform font plumbing and filter escaping for the demo generator.
-from ffutil import filter_quote  # noqa: E402
+from ffutil import FFMPEG_BIN, FFPROBE_BIN, filter_quote  # noqa: E402
 from ingest import FONT_BOLD, FONT_OPT, _resolve_bold_font  # noqa: E402
 
 assert filter_quote("C:\\Windows\\Fonts\\a.ttf") == "'C\\:\\\\Windows\\\\Fonts\\\\a.ttf'"
@@ -177,7 +177,7 @@ print("upload cap OK ->", r.json()["detail"])
 import shutil as _shutil  # noqa: E402
 import subprocess as _subprocess  # noqa: E402
 
-if _shutil.which("ffmpeg") and _shutil.which("ffprobe"):
+if _shutil.which(FFMPEG_BIN) and _shutil.which(FFPROBE_BIN):
     import tempfile
 
     from analyzer import _extract_audio
@@ -185,7 +185,7 @@ if _shutil.which("ffmpeg") and _shutil.which("ffprobe"):
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         _subprocess.run(
-            ["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=10:d=1",
+            [FFMPEG_BIN, "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=10:d=1",
              "-c:v", "libx264", "-pix_fmt", "yuv420p", str(td / "noaudio.mp4")],
             check=True, capture_output=True,
         )
@@ -204,7 +204,27 @@ if _shutil.which("ffmpeg") and _shutil.which("ffprobe"):
             raise AssertionError("no-audio video did not raise")
         except RuntimeError as exc:
             assert "no audio track" in str(exc), exc
-    print("audio extraction OK (friendly no-audio error)")
+
+        # End-to-end upload with a supplied transcript exercises the ingesting
+        # -> analyzing -> ready state transition without needing an AI provider.
+        valid_video = td / "valid.mp4"
+        _subprocess.run(
+            [FFMPEG_BIN, "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=10:d=2",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", str(valid_video)],
+            check=True, capture_output=True,
+        )
+        with valid_video.open("rb") as video_file:
+            r = client.post(
+                "/api/projects/upload",
+                files={"file": ("valid.mp4", video_file, "video/mp4")},
+                data={"title": "Upload smoke test", "transcript_text": "A short test transcript."},
+            )
+        assert r.status_code == 200, r.text
+        created = r.json()
+        assert created["status"] == "ready", created["status"]
+        assert created["duration"] >= 1.5
+        assert client.delete(f"/api/projects/{created['id']}").status_code == 200
+    print("audio extraction and end-to-end upload OK")
 else:
     print("audio extraction SKIPPED (ffmpeg not on PATH)")
 
