@@ -12,6 +12,7 @@ the /api/health capability report.
 import io
 import os
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -234,8 +235,49 @@ if _shutil.which(FFMPEG_BIN) and _shutil.which(FFPROBE_BIN):
         created = r.json()
         assert created["status"] == "ready", created["status"]
         assert created["duration"] >= 1.5
-        assert client.delete(f"/api/projects/{created['id']}").status_code == 200
-    print("audio extraction and end-to-end upload OK")
+
+        # Exercise trim bounds and a real FFmpeg export, including the worker
+        # status lifecycle and cleanup of a stale render after style changes.
+        project_id = created["id"]
+        clip_response = client.post(
+            f"/api/projects/{project_id}/clips",
+            json={"title": "Export smoke test", "start": 0, "end": 2},
+        )
+        assert clip_response.status_code == 200, clip_response.text
+        clip = clip_response.json()
+        trimmed = client.patch(
+            f"/api/projects/{project_id}/clips/{clip['id']}",
+            json={"start": 1.8},
+        )
+        assert trimmed.status_code == 200, trimmed.text
+        assert trimmed.json()["start"] == 0.5 and trimmed.json()["end"] == 2.0
+
+        export_response = client.post(
+            f"/api/projects/{project_id}/clips/{clip['id']}/export"
+        )
+        assert export_response.status_code == 200, export_response.text
+        deadline = time.monotonic() + 60
+        exported_clip = None
+        while time.monotonic() < deadline:
+            project_state = client.get(f"/api/projects/{project_id}").json()
+            exported_clip = next(item for item in project_state["clips"] if item["id"] == clip["id"])
+            if exported_clip["export_status"] in {"done", "error"}:
+                break
+            time.sleep(0.25)
+        assert exported_clip and exported_clip["export_status"] == "done", exported_clip
+        rendered_file = EXPORTS_DIR / exported_clip["export_filename"]
+        assert rendered_file.is_file() and rendered_file.stat().st_size > 1024
+
+        updated_style = client.patch(
+            f"/api/projects/{project_id}/clips/{clip['id']}",
+            json={"style": {"font_size": 64}},
+        )
+        assert updated_style.status_code == 200, updated_style.text
+        assert updated_style.json()["export_status"] == "idle"
+        assert updated_style.json()["export_filename"] is None
+        assert not rendered_file.exists()
+        assert client.delete(f"/api/projects/{project_id}").status_code == 200
+    print("upload, clip trimming, FFmpeg export, and export invalidation OK")
 else:
     print("audio extraction SKIPPED (ffmpeg not on PATH)")
 
