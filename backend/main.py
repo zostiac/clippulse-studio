@@ -982,7 +982,19 @@ def api_export_all(project_id: str):
             _run_export_job(project_id, queued_id)
 
     if queued_ids:
-        threading.Thread(target=run_seq, daemon=True).start()
+        try:
+            threading.Thread(target=run_seq, daemon=True).start()
+        except Exception as exc:
+            with _store_lock:
+                current = load_project(project_id)
+                if current:
+                    for item in current.clips:
+                        if item.id in queued_ids:
+                            item.export_status = "error"
+                            item.export_error = "Could not start the export worker."
+                    save_project(current)
+            logger.exception("Could not start export-all worker for project %s", project_id)
+            raise HTTPException(status_code=500, detail="Could not start the export queue.") from exc
     return response
 
 
