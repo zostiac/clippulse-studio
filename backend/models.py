@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -18,8 +18,17 @@ EXPORTS_DIR = DATA_DIR / "exports"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 COOKIES_FILE = DATA_DIR / "youtube_cookies.txt"
 
+# Upload guardrails (override with CLIPPULSE_MAX_UPLOAD_MB / CLIPPULSE_MAX_SUBTITLE_MB)
+MAX_UPLOAD_MB = int(os.environ.get("CLIPPULSE_MAX_UPLOAD_MB", "1024"))
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+MAX_SUBTITLE_BYTES = int(os.environ.get("CLIPPULSE_MAX_SUBTITLE_MB", "5")) * 1024 * 1024
+
 for d in (PROJECTS_DIR, DEMOS_DIR, EXPORTS_DIR):
     d.mkdir(parents=True, exist_ok=True)
+
+
+class TranscriptionError(RuntimeError):
+    """A transcription provider was attempted and produced no usable transcript."""
 
 
 class WordTiming(BaseModel):
@@ -45,7 +54,14 @@ class ClipStyle(BaseModel):
     words_per_line: int = 3
     show_hook_banner: bool = True
     hook_banner_text: str = ""
-    resolution: Literal["1080x1920", "720x1280"] = "1080x1920"
+    # Vertical exports never drop below the 1080x1920 floor.
+    resolution: Literal["1080x1920", "1440x2560"] = "1080x1920"
+
+    @field_validator("resolution", mode="before")
+    @classmethod
+    def _enforce_resolution_floor(cls, value):
+        """Coerce legacy/unknown values (e.g. 720x1280) up to the 1080p minimum."""
+        return value if value in ("1080x1920", "1440x2560") else "1080x1920"
 
 
 class PlatformMeta(BaseModel):
@@ -81,6 +97,7 @@ class Clip(BaseModel):
     export_url: Optional[str] = None
     export_filename: Optional[str] = None
     export_error: Optional[str] = None
+    exported_at: Optional[float] = None
 
 
 class Project(BaseModel):

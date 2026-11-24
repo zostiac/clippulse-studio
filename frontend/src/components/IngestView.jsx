@@ -388,7 +388,7 @@ export default function IngestView({
                       <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-violet-500/15 text-violet-300">
                         Dual-Speaker Podcast • 1:06
                       </span>
-                      <span className="text-xs text-slate-500">1280×720</span>
+                      <span className="text-xs text-slate-500">1920×1080</span>
                     </div>
                     <h3 className="font-semibold text-white text-base">
                       Why 90% of Creators Quit Before Day 30
@@ -413,7 +413,7 @@ export default function IngestView({
                       <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300">
                         Tech Keynote • 1:00
                       </span>
-                      <span className="text-xs text-slate-500">1280×720</span>
+                      <span className="text-xs text-slate-500">1920×1080</span>
                     </div>
                     <h3 className="font-semibold text-white text-base">
                       How Small AI Teams Ship 10x Faster Than Giants

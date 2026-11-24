@@ -15,14 +15,14 @@ AI-powered long-form YouTube & video clipping platform that turns podcasts, keyn
   - Dynamic Word-by-Word Captions: **Hormozi Pop**, **Beast Clean**, **Minimal Pill**, **Neon Creator**, plus 3-second top Hook Banner.
   - Platform Safe-Zone Overlays for **YouTube Shorts**, **Instagram Reels**, and **TikTok**.
 - **Real FFmpeg + libass MP4 Export**:
-  - Frame-accurate trimming, 1080×1920 or 720×1280 H.264 MP4 rendering with burned-in `.ass` animated captions.
+  - Frame-accurate trimming, **1080×1920 (Full HD, minimum)** or **1440×2560 (QHD)** H.264 MP4 rendering with burned-in `.ass` animated captions (legacy 720p settings are automatically upgraded to the 1080p floor).
   - Download individual MP4s or a complete **ZIP bundle** with ready-to-copy YouTube Shorts, Instagram Reels, and TikTok titles, descriptions, and hashtags.
 
 ## Running Locally
 
 ### Prerequisites
 - **FFmpeg** installed and on PATH (`ffmpeg -version` to verify)
-- **Python 3.10+**
+- **Python 3.10–3.13** (3.14 is not yet supported by the pinned `youtube-transcript-api`/`numpy`/`faster-whisper` wheels)
 - **Node.js 20+** (for frontend build)
 
 ### Quick Start
@@ -118,6 +118,8 @@ clippulse/
 # Backend .env (create if needed)
 CLIPPULSE_DATA_DIR=./data          # Override data directory
 CLIPPULSE_FFMPEG_PATH=ffmpeg       # Custom ffmpeg binary path
+CLIPPULSE_MAX_UPLOAD_MB=1024       # Video upload size cap (default 1024 MB)
+CLIPPULSE_MAX_SUBTITLE_MB=5        # Subtitle upload size cap (default 5 MB)
 ```
 
 ---
@@ -126,7 +128,7 @@ CLIPPULSE_FFMPEG_PATH=ffmpeg       # Custom ffmpeg binary path
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/health` | Health check |
+| `GET` | `/api/health` | Health check + capability report (ffmpeg/ffprobe/local whisper) |
 | `GET` | `/api/settings` | Get current settings (keys masked) |
 | `PUT` | `/api/settings` | Update settings |
 | `POST` | `/api/settings/cookies` | Upload YouTube cookies.txt |
@@ -136,7 +138,7 @@ CLIPPULSE_FFMPEG_PATH=ffmpeg       # Custom ffmpeg binary path
 | `DELETE` | `/api/projects/{id}` | Delete project |
 | `POST` | `/api/projects/demo` | Create demo project (`{demo_key: "podcast_creators"|"tech_keynote"}`) |
 | `POST` | `/api/projects/youtube` | Ingest from YouTube URL |
-| `POST` | `/api/projects/upload` | Upload video file (multipart) |
+| `POST` | `/api/projects/upload` | Upload video file (multipart; size-capped via `CLIPPULSE_MAX_UPLOAD_MB`, container-sniffed) |
 | `POST` | `/api/projects/{id}/reanalyze` | Re-run viral detection |
 | `PUT` | `/api/projects/{id}/transcript` | Update transcript segments |
 | `POST` | `/api/projects/{id}/clips` | Create custom clip |
@@ -159,11 +161,18 @@ CLIPPULSE_FFMPEG_PATH=ffmpeg       # Custom ffmpeg binary path
 - **C2**: Shell injection via ASS filter path — used `shlex.quote()` for filtergraph interpolation
 - **C4**: Export race condition — wrapped `_run_export_job` with global `_store_lock`
 
-### High Priority (Recommended)
+### High Priority (Fixed in this version)
 - **H1**: ASS path injection — addressed via `shlex.quote()`
-- **H2**: Silent transcription failure — now raises explicit error surfaced to UI
-- **H3**: Demo video duplication — use symlink or serve from demo dir
+- **H2**: Silent transcription failure — transcription errors now raise `TranscriptionError`, persist `status="error"` with `error_message`, and surface in the UI (422)
+- **H3**: Demo video duplication — demo assets are hardlinked/symlinked into new projects instead of copied
+- **H4**: Exported video URL leaked internal filename — cache-buster now uses a numeric `exported_at` timestamp
 - **H5**: SPA fallback masks 404s — added `/api` exclusion
+
+### Also fixed in this version
+- **1080p export floor** — clip exports render at 1080×1920 minimum (optional 1440×2560 QHD); legacy 720p settings auto-upgrade
+- **Broken install** — `yt-dlp` pin now points at an existing PyPI release; `package-lock.json` re-synced so `npm ci` works
+- **Broken lint** — ESLint 9 flat config added, `npm run lint` runs clean
+- **Upload guardrails** — configurable size caps + container magic-byte sniffing on uploads
 
 ### Medium Priority (Backlog)
 - **M1–M10**: Code organization, testability, timeouts, pinned deps, error boundaries — see `CODE_REVIEW.md`
@@ -188,7 +197,7 @@ MIT — Free for personal and commercial use.
 
 ## Contributing
 1. Fork → branch → PR
-2. Run `ruff check backend/` and `npm run lint` (if configured) before committing
+2. Run `python backend/smoke_test.py` and `npm run lint` before committing
 3. Add tests for new heuristic scoring logic
 
 ---
@@ -198,6 +207,7 @@ MIT — Free for personal and commercial use.
 | Issue | Fix |
 |-------|-----|
 | `ffmpeg not found` | Install FFmpeg and ensure it's on PATH |
+| `Could not find a version that satisfies the requirement youtube-transcript-api==1.0.0` (or similar "requires a different python version") | You're on Python 3.14+. Install Python 3.12 (`winget install Python.Python.3.12`), recreate the venv with `py -3.12 -m venv venv`, and reinstall requirements |
 | `ModuleNotFoundError: faster_whisper` | `pip install -r backend/requirements.txt` |
 | YouTube download fails with "Sign in to confirm" | Add cookies.txt in Settings, or use Upload/Demo mode |
 | Frontend shows blank page | Run `npm run build` in `frontend/`, then restart backend |

@@ -1,11 +1,24 @@
 from __future__ import annotations
 
-import shlex
 import subprocess
 from pathlib import Path
 from typing import Callable, List, Optional
 
+from ffutil import filter_quote
 from models import Clip, EXPORTS_DIR, TranscriptSegment, WordTiming
+
+# Vertical export presets. Every render honors a hard 1080x1920 full-HD floor.
+RESOLUTION_PRESETS = {
+    "1080x1920": (1080, 1920),
+    "1440x2560": (1440, 2560),
+}
+MIN_OUT_W, MIN_OUT_H = 1080, 1920
+
+
+def resolve_output_size(resolution: str) -> tuple[int, int]:
+    """Map a stored resolution label to an output size, never below the 1080p floor."""
+    w, h = RESOLUTION_PRESETS.get(resolution, RESOLUTION_PRESETS["1080x1920"])
+    return max(MIN_OUT_W, w), max(MIN_OUT_H, h)
 
 
 def _fmt_ass_time(sec: float) -> str:
@@ -120,8 +133,8 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,DejaVu Sans,{font_size},{pal['primary']},&H00FFFFFF,{pal['outline_color']},{pal['back_color']},-1,0,0,0,100,100,0,0,{pal['border_style']},{pal['outline']},{pal['shadow']},{align},60,60,{margin_v},1
-Style: HookBanner,DejaVu Sans,{hook_font},&H00FFFFFF,&H00FFFFFF,&H005C3B7C,&HCC141829,-1,0,0,0,100,100,0,0,3,{max(6, int(14 * scale))},0,8,70,70,{int(145 * scale)},1
+Style: Caption,Arial,{font_size},{pal['primary']},&H00FFFFFF,{pal['outline_color']},{pal['back_color']},-1,0,0,0,100,100,0,0,{pal['border_style']},{pal['outline']},{pal['shadow']},{align},60,60,{margin_v},1
+Style: HookBanner,Arial,{hook_font},&H00FFFFFF,&H00FFFFFF,&H005C3B7C,&HCC141829,-1,0,0,0,100,100,0,0,3,{max(6, int(14 * scale))},0,8,70,70,{int(145 * scale)},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -175,10 +188,7 @@ def export_clip_mp4(
     transcript: List[TranscriptSegment],
     on_progress: Optional[Callable[[int], None]] = None,
 ) -> Path:
-    if clip.style.resolution == "720x1280":
-        out_w, out_h = 720, 1280
-    else:
-        out_w, out_h = 1080, 1920
+    out_w, out_h = resolve_output_size(clip.style.resolution)
 
     out_name = f"{clip.project_id}_{clip.id}_{clip.style.layout}.mp4"
     out_path = EXPORTS_DIR / out_name
@@ -247,9 +257,9 @@ def export_clip_mp4(
             )
 
     if has_ass:
-        # Use shlex.quote to safely escape the path for filtergraph interpolation
-        safe_ass = shlex.quote(str(ass_path))
-        filter_graph += f";[vbase]ass='{safe_ass}'[vout]"
+        # filter_quote survives FFmpeg 4.x-9.x option parsing on all platforms
+        # (shlex.quote breaks on Windows drive-letter colons with modern FFmpeg).
+        filter_graph += f";[vbase]ass=filename={filter_quote(str(ass_path))}[vout]"
     else:
         filter_graph += ";[vbase]null[vout]"
 

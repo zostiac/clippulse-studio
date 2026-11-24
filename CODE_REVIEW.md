@@ -49,17 +49,20 @@ ClipPulse Studio is a well-architected, feature-complete application for AI-powe
 #### H2: Silent Transcription Failure
 **File**: `backend/analyzer.py:595-611`  
 **Issue**: Cloud Whisper failure → falls back to local; local failure → returns empty transcript. Project status stays "ready" but clips list is empty. User sees no error.  
-**Fix**: Raise `RuntimeError` with provider-specific message; catch in `analyze_project` and set `project.status = "error"` with `error_message`.
+**Fix**: Raise `RuntimeError` with provider-specific message; catch in `analyze_project` and set `project.status = "error"` with `error_message`.  
+**Status**: ✅ Fixed (2026-11-23) — `models.TranscriptionError` raised when every attempted provider fails; endpoints persist `status="error"` + `error_message` and return 422.
 
 #### H3: Demo Video Duplication
 **File**: `backend/main.py:267-268`  
 **Issue**: `shutil.copyfile(demo_video, dest_video)` copies ~10MB per demo project creation.  
-**Fix**: Use `os.symlink(demo_video, dest_video)` on POSIX, or serve demo video directly via `/media/demos/{key}.mp4` endpoint.
+**Fix**: Use `os.symlink(demo_video, dest_video)` on POSIX, or serve demo video directly via `/media/demos/{key}.mp4` endpoint.  
+**Status**: ✅ Fixed (2026-11-23) — `_link_or_copy()` tries hardlink → symlink → copy.
 
 #### H4: Exported Video URL Leaks Filename
 **File**: `frontend/src/components/StudioPreview.jsx:323`  
 **Issue**: `src={`${clip.export_url}?t=${clip.export_filename}}` — `t` param unused, leaks internal filename.  
-**Fix**: Remove query param; use `clip.export_url` directly.
+**Fix**: Remove query param; use `clip.export_url` directly.  
+**Status**: ✅ Fixed (2026-11-23) — cache-buster is now `?v=${clip.exported_at}` (new `Clip.exported_at` timestamp); download name derives from the clip title.
 
 #### H5: SPA Fallback Masks API 404s
 **File**: `backend/main.py:722-727`  

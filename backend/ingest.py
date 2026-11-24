@@ -11,6 +11,7 @@ import numpy as np
 import yt_dlp
 from youtube_transcript_api import YouTubeTranscriptApi
 
+from ffutil import filter_quote
 from models import (
     COOKIES_FILE,
     DEMOS_DIR,
@@ -18,7 +19,31 @@ from models import (
     WordTiming,
 )
 
-FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+def _resolve_bold_font() -> str:
+    """Pick an on-disk bold TTF for ffmpeg drawtext, across platforms."""
+    candidates = [
+        # Windows
+        "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/segoeuib.ttf",
+        # macOS
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/Library/Fonts/Arial Bold.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        # Linux
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    ]
+    for cand in candidates:
+        if Path(cand).is_file():
+            return cand
+    return ""
+
+
+FONT_BOLD = _resolve_bold_font()
+# drawtext option fragment: an escaped fontfile clause, or empty (fontconfig default).
+# expansion=none keeps literal '%' in captions from being parsed as expansion syntax.
+FONT_OPT = f"expansion=none:fontfile={filter_quote(FONT_BOLD)}:" if FONT_BOLD else "expansion=none:"
 
 
 class YouTubeBlockedError(Exception):
@@ -51,6 +76,18 @@ def fetch_youtube_oembed(url: str) -> dict:
     except Exception:
         pass
     return {}
+
+
+_VIDEO_MAGIC = (
+    b"\x1a\x45\xdf\xa3",  # EBML header: WebM / Matroska (.mkv)
+)
+
+
+def is_supported_video_bytes(head: bytes) -> bool:
+    """Sniff container magic bytes: ISO-BMFF (MP4/MOV/M4V) or EBML (WebM/MKV)."""
+    if len(head) >= 12 and head[4:8] == b"ftyp":
+        return True
+    return any(head.startswith(sig) for sig in _VIDEO_MAGIC)
 
 
 def probe_video(video_path: Path) -> Tuple[float, int, int]:
@@ -394,7 +431,7 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
     if demo_key not in DEMO_CATALOG:
         demo_key = "podcast_creators"
     cfg = DEMO_CATALOG[demo_key]
-    out_video = DEMOS_DIR / f"{demo_key}.mp4"
+    out_video = DEMOS_DIR / f"{demo_key}_1080p.mp4"
     dur = float(cfg["duration"])
 
     transcript: List[TranscriptSegment] = []
@@ -409,58 +446,55 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
         )
 
     if not out_video.exists() or out_video.stat().st_size < 100_000:
-        # Build rich 1280x720 studio video with dual speaker panels + live topic badge + modulated speech-cadence audio
-        # Escaping helper for drawtext
-        def esc(s: str) -> str:
-            return s.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-
-        left_lbl = esc(cfg["left_speaker"])
-        right_lbl = esc(cfg["right_speaker"])
-        title_lbl = esc(cfg["title"][:48])
-        chan_lbl = esc(cfg["channel_name"])
+        # Build rich 1920x1080 (full HD) studio video with dual speaker panels + live topic badge + modulated speech-cadence audio
+        left_lbl = cfg["left_speaker"]
+        right_lbl = cfg["right_speaker"]
+        title_lbl = cfg["title"][:48]
+        chan_lbl = cfg["channel_name"]
 
         # Dynamic drawtext per segment for live studio teleprompter/topic feel
         seg_filters = []
         for idx, (st, en, txt) in enumerate(cfg["segments"]):
-            short_topic = esc(txt[:54] + ("..." if len(txt) > 54 else ""))
+            short_topic = txt[:54] + ("..." if len(txt) > 54 else "")
+            enable = filter_quote(f"between(t,{st},{en})")
             active_side = "LEFT" if idx % 2 == 0 else "RIGHT"
             # Subtle active glow box on speaking side
             if active_side == "LEFT":
                 seg_filters.append(
-                    f"drawbox=x=60:y=110:w=560:h=430:color=0x7C5CFC@0.22:t=fill:enable='between(t,{st},{en})'"
+                    f"drawbox=x=90:y=165:w=840:h=645:color=0x7C5CFC@0.22:t=fill:enable={enable}"
                 )
             else:
                 seg_filters.append(
-                    f"drawbox=x=660:y=110:w=560:h=430:color=0x22D3EE@0.22:t=fill:enable='between(t,{st},{en})'"
+                    f"drawbox=x=990:y=165:w=840:h=645:color=0x22D3EE@0.22:t=fill:enable={enable}"
                 )
             seg_filters.append(
-                f"drawtext=fontfile={FONT_BOLD}:text='{short_topic}':fontcolor=white:fontsize=22:"
-                f"x=(w-text_w)/2:y=612:enable='between(t,{st},{en})'"
+                f"drawtext={FONT_OPT}text={filter_quote(short_topic)}:fontcolor=white:fontsize=33:"
+                f"x=(w-text_w)/2:y=918:enable={enable}"
             )
 
         vf_parts = [
-            "drawbox=x=0:y=0:w=1280:h=720:color=0x0D101B:t=fill",
+            "drawbox=x=0:y=0:w=1920:h=1080:color=0x0D101B:t=fill",
             # Studio header bar
-            "drawbox=x=0:y=0:w=1280:h=78:color=0x141829:t=fill",
-            f"drawtext=fontfile={FONT_BOLD}:text='{chan_lbl}':fontcolor=0x22D3EE:fontsize=20:x=60:y=28",
-            f"drawtext=fontfile={FONT_BOLD}:text='{title_lbl}':fontcolor=white:fontsize=22:x=330:y=26",
+            "drawbox=x=0:y=0:w=1920:h=117:color=0x141829:t=fill",
+            f"drawtext={FONT_OPT}text={filter_quote(chan_lbl)}:fontcolor=0x22D3EE:fontsize=30:x=90:y=42",
+            f"drawtext={FONT_OPT}text={filter_quote(title_lbl)}:fontcolor=white:fontsize=33:x=495:y=39",
             # Left speaker panel
-            "drawbox=x=60:y=110:w=560:h=430:color=0x191F36:t=fill",
-            "drawbox=x=60:y=110:w=560:h=430:color=0x7C5CFC@0.55:t=3",
+            "drawbox=x=90:y=165:w=840:h=645:color=0x191F36:t=fill",
+            "drawbox=x=90:y=165:w=840:h=645:color=0x7C5CFC@0.55:t=5",
             # Stylized speaker silhouette Left
-            "drawbox=x=275:y=185:w=130:h=130:color=0x7C5CFC:t=fill",
-            "drawbox=x=220:y=335:w=240:h=150:color=0x4C35B5:t=fill",
-            f"drawtext=fontfile={FONT_BOLD}:text='{left_lbl}':fontcolor=white:fontsize=22:x=100:y=135",
+            "drawbox=x=413:y=278:w=195:h=195:color=0x7C5CFC:t=fill",
+            "drawbox=x=330:y=503:w=360:h=225:color=0x4C35B5:t=fill",
+            f"drawtext={FONT_OPT}text={filter_quote(left_lbl)}:fontcolor=white:fontsize=33:x=150:y=203",
             # Right speaker panel
-            "drawbox=x=660:y=110:w=560:h=430:color=0x162235:t=fill",
-            "drawbox=x=660:y=110:w=560:h=430:color=0x22D3EE@0.55:t=3",
+            "drawbox=x=990:y=165:w=840:h=645:color=0x162235:t=fill",
+            "drawbox=x=990:y=165:w=840:h=645:color=0x22D3EE@0.55:t=5",
             # Stylized speaker silhouette Right
-            "drawbox=x=875:y=185:w=130:h=130:color=0x22D3EE:t=fill",
-            "drawbox=x=820:y=335:w=240:h=150:color=0x0E7490:t=fill",
-            f"drawtext=fontfile={FONT_BOLD}:text='{right_lbl}':fontcolor=white:fontsize=22:x=700:y=135",
+            "drawbox=x=1313:y=278:w=195:h=195:color=0x22D3EE:t=fill",
+            "drawbox=x=1230:y=503:w=360:h=225:color=0x0E7490:t=fill",
+            f"drawtext={FONT_OPT}text={filter_quote(right_lbl)}:fontcolor=white:fontsize=33:x=1050:y=203",
             # Lower third bar
-            "drawbox=x=60:y=580:w=1160:h=96:color=0x131726@0.95:t=fill",
-            "drawbox=x=60:y=580:w=8:h=96:color=0x7C5CFC:t=fill",
+            "drawbox=x=90:y=870:w=1740:h=144:color=0x131726@0.95:t=fill",
+            "drawbox=x=90:y=870:w=12:h=144:color=0x7C5CFC:t=fill",
         ] + seg_filters
 
         vf = ",".join(vf_parts)
@@ -479,7 +513,7 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             "-f",
             "lavfi",
             "-i",
-            f"color=c=0x0D101B:s=1280x720:r=24:d={dur}",
+            f"color=c=0x0D101B:s=1920x1080:r=24:d={dur}",
             "-f",
             "lavfi",
             "-i",
@@ -489,7 +523,7 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             "-c:v",
             "libx264",
             "-preset",
-            "veryfast",
+            "ultrafast",
             "-pix_fmt",
             "yuv420p",
             "-c:a",
@@ -500,7 +534,17 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             "+faststart",
             str(out_video),
         ]
-        subprocess.run(cmd, capture_output=True, check=True)
+        try:
+            subprocess.run(cmd, capture_output=True, check=True)
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "FFmpeg not found on PATH. Install FFmpeg and restart the server."
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            tail = (exc.stderr or b"").decode(errors="ignore").strip().splitlines()[-3:]
+            raise RuntimeError(
+                "Demo video generation failed (ffmpeg): " + (" / ".join(tail) or str(exc))
+            ) from exc
 
     meta = {
         "title": cfg["title"],

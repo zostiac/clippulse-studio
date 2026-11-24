@@ -1,8 +1,9 @@
 async function req(url, options = {}) {
+  const { timeoutMs = 30000, ...fetchOptions } = options;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
+    const res = await fetch(url, { ...fetchOptions, signal: controller.signal });
     const contentType = res.headers.get("content-type") || "";
     const isJson = contentType.includes("application/json");
     const data = isJson ? await res.json() : await res.text();
@@ -13,10 +14,20 @@ async function req(url, options = {}) {
       throw err;
     }
     return data;
+  } catch (e) {
+    if (e && e.name === "AbortError") {
+      throw new Error(
+        `Request timed out after ${Math.round(timeoutMs / 1000)}s. The server may still be working — refresh the page to see the result.`
+      );
+    }
+    throw e;
   } finally {
     clearTimeout(timeout);
   }
 }
+
+// Ingest/analysis calls run FFmpeg and Whisper and can take minutes.
+const ANALYSIS_TIMEOUT_MS = 600000;
 
 export const api = {
   getSettings: () => req("/api/settings"),
@@ -43,6 +54,7 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ demo_key }),
+      timeoutMs: ANALYSIS_TIMEOUT_MS,
     }),
 
   createFromYoutube: (url, fallback_transcript = "") =>
@@ -50,16 +62,18 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url, fallback_transcript }),
+      timeoutMs: ANALYSIS_TIMEOUT_MS,
     }),
 
   uploadVideo: (formData) =>
     req("/api/projects/upload", {
       method: "POST",
       body: formData,
+      timeoutMs: ANALYSIS_TIMEOUT_MS,
     }),
 
   reanalyzeProject: (id) =>
-    req(`/api/projects/${id}/reanalyze`, { method: "POST" }),
+    req(`/api/projects/${id}/reanalyze`, { method: "POST", timeoutMs: ANALYSIS_TIMEOUT_MS }),
 
   updateTranscript: (id, segments) =>
     req(`/api/projects/${id}/transcript`, {
