@@ -19,6 +19,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [reanalyzing, setReanalyzing] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   const seekRef = useRef(null);
   const patchTimerRef = useRef(new Map());
@@ -117,17 +118,27 @@ export default function App() {
   }
 
   async function handleOpenProject(id) {
-    const proj = await api.getProject(id);
-    openProjectObj(proj);
+    setActionError("");
+    try {
+      const proj = await api.getProject(id);
+      openProjectObj(proj);
+    } catch (error) {
+      setActionError(error.message || "Could not open this project.");
+    }
   }
 
   async function handleDeleteProject(id) {
-    await flushProjectPatches(id);
-    await api.deleteProject(id);
-    setProjects((prev) => prev.filter((p) => p.id !== id));
-    if (activeProject?.id === id) {
-      setActiveProject(null);
-      setSelectedClipId(null);
+    setActionError("");
+    try {
+      await flushProjectPatches(id);
+      await api.deleteProject(id);
+      setProjects((prev) => prev.filter((p) => p.id !== id));
+      if (activeProject?.id === id) {
+        setActiveProject(null);
+        setSelectedClipId(null);
+      }
+    } catch (error) {
+      setActionError(error.message || "Could not delete this project.");
     }
   }
 
@@ -186,31 +197,44 @@ export default function App() {
 
   async function handleCreateClip(payload) {
     if (!activeProject) return;
-    const created = await api.createClip(activeProject.id, payload);
-    setActiveProject((prev) => ({
-      ...prev,
-      clips: [created, ...prev.clips],
-    }));
-    setSelectedClipId(created.id);
+    setActionError("");
+    try {
+      const created = await api.createClip(activeProject.id, payload);
+      setActiveProject((prev) => ({
+        ...prev,
+        clips: [created, ...prev.clips],
+      }));
+      setSelectedClipId(created.id);
+    } catch (error) {
+      setActionError(error.message || "Could not create this clip.");
+    }
   }
 
   async function handleDeleteClip(clipId) {
     if (!activeProject) return;
-    await flushClipPatch(activeProject.id, clipId);
-    await api.deleteClip(activeProject.id, clipId);
-    const remaining = activeProject.clips.filter((c) => c.id !== clipId);
-    setActiveProject((prev) => ({ ...prev, clips: prev.clips.filter((c) => c.id !== clipId) }));
-    if (selectedClipId === clipId) setSelectedClipId(remaining[0]?.id || null);
+    setActionError("");
+    try {
+      await flushClipPatch(activeProject.id, clipId);
+      await api.deleteClip(activeProject.id, clipId);
+      const remaining = activeProject.clips.filter((c) => c.id !== clipId);
+      setActiveProject((prev) => ({ ...prev, clips: prev.clips.filter((c) => c.id !== clipId) }));
+      if (selectedClipId === clipId) setSelectedClipId(remaining[0]?.id || null);
+    } catch (error) {
+      setActionError(error.message || "Could not delete this clip.");
+    }
   }
 
   async function handleReanalyze() {
     if (!activeProject) return;
     await flushProjectPatches(activeProject.id);
     setReanalyzing(true);
+    setActionError("");
     try {
       const updated = await api.reanalyzeProject(activeProject.id);
       setActiveProject(updated);
       setSelectedClipId(updated.clips?.[0]?.id || null);
+    } catch (error) {
+      setActionError(error.message || "Could not reanalyze this project.");
     } finally {
       setReanalyzing(false);
     }
@@ -218,26 +242,41 @@ export default function App() {
 
   async function handleSaveTranscript(segments) {
     if (!activeProject) return;
-    const updated = await api.updateTranscript(activeProject.id, segments);
-    setActiveProject(updated);
+    try {
+      const updated = await api.updateTranscript(activeProject.id, segments);
+      setActiveProject(updated);
+      setActionError("");
+    } catch (error) {
+      setActionError(error.message || "Could not save the transcript.");
+      throw error;
+    }
   }
 
   async function handleExportClip() {
     if (!activeProject || !selectedClip) return;
-    // Wait for any queued or in-flight edits before rendering this version.
-    await flushClipPatch(activeProject.id, selectedClip.id);
-    const updatedClip = await api.exportClip(activeProject.id, selectedClip.id);
-    setActiveProject((prev) => ({
-      ...prev,
-      clips: prev.clips.map((c) => (c.id === updatedClip.id ? updatedClip : c)),
-    }));
+    setActionError("");
+    try {
+      await flushClipPatch(activeProject.id, selectedClip.id);
+      const updatedClip = await api.exportClip(activeProject.id, selectedClip.id);
+      setActiveProject((prev) => ({
+        ...prev,
+        clips: prev.clips.map((c) => (c.id === updatedClip.id ? updatedClip : c)),
+      }));
+    } catch (error) {
+      setActionError(error.message || "Could not start this export.");
+    }
   }
 
   async function handleExportAll() {
     if (!activeProject) return;
-    await flushProjectPatches(activeProject.id);
-    const updatedProj = await api.exportAll(activeProject.id);
-    setActiveProject(updatedProj);
+    setActionError("");
+    try {
+      await flushProjectPatches(activeProject.id);
+      const updatedProj = await api.exportAll(activeProject.id);
+      setActiveProject(updatedProj);
+    } catch (error) {
+      setActionError(error.message || "Could not start the export queue.");
+    }
   }
 
   function handleNudgeStart(delta) {
@@ -272,6 +311,15 @@ export default function App() {
         onExportAll={handleExportAll}
         exportingAll={!!hasRendering}
       />
+
+      {actionError && (
+        <div role="alert" className="flex items-start justify-between gap-3 border-b border-rose-400/20 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-200">
+          <span>{actionError}</span>
+          <button type="button" onClick={() => setActionError("")} className="shrink-0 font-semibold text-rose-100 underline underline-offset-2">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {!activeProject ? (
         <IngestView
