@@ -221,20 +221,18 @@ def _stream_file_range(path: Path, request: Request, download_name: Optional[str
 # ---------------------------------------------------------------------------
 
 def _link_or_copy(src: Path, dst: Path) -> None:
-    """Avoid duplicating multi-MB demo assets: hardlink, then symlink, then copy."""
+    """Reuse demo assets safely: hardlink when possible, otherwise copy.
+
+    Do not create symlinks here: media serving deliberately rejects resolved
+    paths outside the per-project directory.
+    """
     if dst.exists() or dst.is_symlink():
         return
     try:
         os.link(src, dst)
         return
     except OSError:
-        pass
-    try:
-        os.symlink(src, dst)
-        return
-    except OSError:
-        pass
-    shutil.copyfile(src, dst)
+        shutil.copyfile(src, dst)
 
 
 def _run_analysis(project: Project, settings: AppSettings) -> Project:
