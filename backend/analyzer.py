@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import json
 import re
 import subprocess
@@ -580,6 +582,9 @@ def detect_clips_heuristic(
     return clips
 
 
+logger = logging.getLogger(__name__)
+
+
 def analyze_project(
     project_id: str,
     title: str,
@@ -600,6 +605,7 @@ def analyze_project(
                 if transcript:
                     engine_used = f"{settings.ai_provider}_whisper"
             except Exception:
+                logger.exception("Cloud transcription failed; falling back to local transcription or audio heuristics")
                 transcript = []
 
         if not transcript and settings.enable_local_whisper:
@@ -608,6 +614,7 @@ def analyze_project(
                 if transcript:
                     engine_used = "local_whisper"
             except Exception:
+                logger.exception("Local Whisper transcription failed; falling back to audio heuristics")
                 transcript = []
 
     # 2. LLM viral clip scoring (if free-tier or OpenAI key configured), else Local Heuristic
