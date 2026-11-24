@@ -68,6 +68,20 @@ export default function App() {
     patchTimerRef.current.clear();
   }, []);
 
+  function applyServerClipUpdate(projectId, updatedClip) {
+    const key = `${projectId}:${updatedClip.id}`;
+    const pending = patchTimerRef.current.get(key);
+    const visibleClip = pending ? { ...updatedClip, ...pending.patch } : updatedClip;
+    setActiveProject((current) =>
+      current?.id === projectId
+        ? {
+            ...current,
+            clips: current.clips.map((clip) => clip.id === updatedClip.id ? visibleClip : clip),
+          }
+        : current
+    );
+  }
+
   async function flushClipPatch(projectId, clipId) {
     const key = `${projectId}:${clipId}`;
     const queued = patchTimerRef.current.get(key);
@@ -78,7 +92,10 @@ export default function App() {
       queued.error = null;
       queued.promise = Promise.resolve(queued.promise)
         .catch(() => {})
-        .then(() => api.updateClip(projectId, clipId, queued.patch));
+        .then((updatedClip) => {
+          applyServerClipUpdate(projectId, updatedClip);
+          return updatedClip;
+        });
     } else if (queued.error) {
       // A debounced save failed; retry it before a destructive or export action.
       queued.error = null;
@@ -90,7 +107,8 @@ export default function App() {
       await queued.promise;
       if (queued.error) {
         queued.error = null;
-        await api.updateClip(projectId, clipId, queued.patch);
+        const updatedClip = await api.updateClip(projectId, clipId, queued.patch);
+        applyServerClipUpdate(projectId, updatedClip);
       }
       if (patchTimerRef.current.get(key) === queued) patchTimerRef.current.delete(key);
     } catch (error) {
@@ -160,11 +178,13 @@ export default function App() {
         clips: prev.clips.map((c) => {
           if (c.id !== clipId) return c;
           const next = { ...c, ...patch };
-          if (patch.style || patch.start !== undefined || patch.end !== undefined) {
-            if (next.export_status === "done") {
-              next.export_status = "idle";
-              next.export_progress = 0;
-            }
+          const invalidatesExport = patch.style !== undefined || patch.start !== undefined || patch.end !== undefined;
+          if (invalidatesExport && next.export_status === "done") {
+            next.export_status = "idle";
+            next.export_progress = 0;
+            next.export_filename = null;
+            next.export_url = null;
+            next.exported_at = null;
           }
           return next;
         }),
@@ -183,13 +203,14 @@ export default function App() {
       queued.timer = null;
       queued.promise = Promise.resolve(queued.promise)
         .catch(() => {})
-        .then(() => api.updateClip(projId, clipId, queued.patch))
-        .then(() => {
+        .then((updatedClip) => {
+          applyServerClipUpdate(projId, updatedClip);
           if (patchTimerRef.current.get(key) === queued) patchTimerRef.current.delete(key);
         })
         .catch((e) => {
           queued.error = e;
-          console.error("Failed to save clip update; it will retry before the next action:", e);
+          setActionError(e.message || "Could not save this clip change. It will retry before the next action.");
+          console.error("Failed to save clip update:", e);
         });
     }, 300);
     patchTimerRef.current.set(key, queued);
@@ -226,10 +247,10 @@ export default function App() {
 
   async function handleReanalyze() {
     if (!activeProject) return;
-    await flushProjectPatches(activeProject.id);
     setReanalyzing(true);
     setActionError("");
     try {
+      await flushProjectPatches(activeProject.id);
       const updated = await api.reanalyzeProject(activeProject.id);
       setActiveProject(updated);
       setSelectedClipId(updated.clips?.[0]?.id || null);
