@@ -20,7 +20,13 @@ os.environ.setdefault("CLIPPULSE_MAX_UPLOAD_MB", "1")
 
 # --- unit checks -------------------------------------------------------------
 from exporter import RESOLUTION_PRESETS, resolve_output_size  # noqa: E402
-from ingest import distribute_words, is_supported_video_bytes  # noqa: E402
+from ingest import (
+    distribute_words,
+    is_supported_video_bytes,
+    parse_plain_transcript,
+    parse_subtitle_text,
+    probe_video,
+)  # noqa: E402
 from models import AppSettings, ClipStyle, TranscriptionError  # noqa: E402
 
 assert resolve_output_size("1080x1920") == (1080, 1920)
@@ -41,6 +47,11 @@ short_words = distribute_words("one two three", 0.0, 0.1)
 assert len(short_words) == 3
 assert all(word.end > word.start for word in short_words)
 assert short_words[-1].end <= 0.1
+short_subtitle = parse_subtitle_text("1\\n00:00:00,000 --> 00:00:00,100\\none two three")
+assert len(short_subtitle) == 1
+assert all(word.end > word.start and word.end <= short_subtitle[0].end for word in short_subtitle[0].words)
+pasted = parse_plain_transcript("First sentence. Second sentence.", 1.5)
+assert pasted and pasted[-1].end <= 1.5
 
 # Cross-platform font plumbing and filter escaping for the demo generator.
 from ffutil import filter_quote  # noqa: E402
@@ -178,6 +189,16 @@ if _shutil.which("ffmpeg") and _shutil.which("ffprobe"):
              "-c:v", "libx264", "-pix_fmt", "yuv420p", str(td / "noaudio.mp4")],
             check=True, capture_output=True,
         )
+        _subprocess.run(
+            ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+             "-c:a", "aac", str(td / "audio-only.mp4")],
+            check=True, capture_output=True,
+        )
+        try:
+            probe_video(td / "audio-only.mp4")
+            raise AssertionError("audio-only media was accepted as a video")
+        except ValueError as exc:
+            assert "video stream" in str(exc)
         try:
             _extract_audio(td / "noaudio.mp4", ["-f", "wav"], td / "a.wav")
             raise AssertionError("no-audio video did not raise")
