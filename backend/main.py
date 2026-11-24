@@ -75,6 +75,9 @@ ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
+if "*" in ALLOWED_ORIGINS:
+    raise RuntimeError("CLIPPULSE_ALLOWED_ORIGINS must list explicit origins; wildcard CORS is disabled.")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -86,7 +89,8 @@ app.add_middleware(
 
 @app.middleware("http")
 async def protect_api(request: Request, call_next):
-    if request.url.path.startswith("/api/") and request.url.path != "/api/health" and request.method != "OPTIONS":
+    is_protected_path = request.url.path.startswith(("/api/", "/media/"))
+    if is_protected_path and request.url.path != "/api/health" and request.method != "OPTIONS":
         if API_TOKEN:
             supplied = request.headers.get("x-api-token", "")
             if not hmac.compare_digest(supplied, API_TOKEN):
