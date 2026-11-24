@@ -91,6 +91,52 @@ with _store_lock:
 print("storage path/lock checks OK")
 print("unit checks OK")
 
+# A YouTube subtitle HTTP 429 must not fail an otherwise successful video download.
+from unittest.mock import patch  # noqa: E402
+
+
+class _FakeYoutubeDL:
+    instances = 0
+
+    def __init__(self, options):
+        self.options = options
+        type(self).instances += 1
+        self.instance_number = type(self).instances
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def extract_info(self, _url, download=True):
+        if self.instance_number == 1:
+            assert self.options["writesubtitles"] is False
+            (youtube_test_dir / "source.mp4").write_bytes(b"video payload")
+            return {"title": "429 test video", "uploader": "Test channel"}
+        assert self.options["skip_download"] is True
+        raise RuntimeError("HTTP Error 429: Too Many Requests")
+
+
+class _UnavailableTranscriptApi:
+    def fetch(self, _video_id):
+        raise RuntimeError("captions unavailable")
+
+
+with tempfile.TemporaryDirectory() as youtube_td:
+    youtube_test_dir = Path(youtube_td)
+    _FakeYoutubeDL.instances = 0
+    with patch.object(_ingest.yt_dlp, "YoutubeDL", _FakeYoutubeDL), \
+         patch.object(_ingest, "fetch_youtube_oembed", return_value={}), \
+         patch.object(_ingest, "YouTubeTranscriptApi", _UnavailableTranscriptApi):
+        youtube_video, youtube_meta, youtube_transcript = _ingest.ingest_youtube(
+            "https://youtu.be/abcdefghijk", youtube_test_dir
+        )
+    assert youtube_video.exists()
+    assert youtube_meta["title"] == "429 test video"
+    assert youtube_transcript == []
+print("YouTube subtitle 429 fallback OK")
+
 # A truncated cached demo must be regenerated, and only a probed MP4 may be published.
 import ingest as _ingest  # noqa: E402
 
