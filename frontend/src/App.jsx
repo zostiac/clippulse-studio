@@ -298,13 +298,14 @@ export default function App() {
         project={activeProject}
         settings={settings}
         onGoHome={async () => {
-          if (activeProject) await flushProjectPatches(activeProject.id);
-          setActiveProject(null);
-          setSelectedClipId(null);
           try {
+            if (activeProject) await flushProjectPatches(activeProject.id);
+            setActiveProject(null);
+            setSelectedClipId(null);
             setProjects(await api.listProjects());
+            setActionError("");
           } catch (error) {
-            console.error("Could not refresh projects:", error);
+            setActionError(error.message || "Could not leave the editor safely.");
           }
         }}
         onOpenSettings={() => setSettingsOpen(true)}
