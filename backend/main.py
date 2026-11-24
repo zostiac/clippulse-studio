@@ -377,7 +377,7 @@ def update_settings(payload: SettingsUpdate):
 
 def _validate_netscape_cookies(text: str) -> bool:
     """Basic validation for Netscape cookie format."""
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")]
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip() and (not ln.startswith("#") or ln.startswith("#HttpOnly_"))]
     if not lines:
         return False
     for ln in lines:
@@ -568,25 +568,28 @@ async def api_create_upload(
     transcript_text: Optional[str] = Form(None),
     subtitle_file: Optional[UploadFile] = File(None),
 ):
-    proj_id = f"proj_{uuid.uuid4().hex[:8]}"
-    pdir = get_project_dir(proj_id)
-
     filename = (file.filename or "").strip()
     ext = Path(filename).suffix.lower()
     if ext not in {".mp4", ".mov", ".webm", ".mkv", ".m4v"}:
         raise HTTPException(status_code=415, detail="Unsupported video format. Upload MP4, MOV, WebM, MKV, or M4V.")
+    if subtitle_file and Path(subtitle_file.filename or "").suffix.lower() not in {".srt", ".vtt"}:
+        raise HTTPException(status_code=415, detail="Subtitle files must use .srt or .vtt.")
+
+    proj_id = f"proj_{uuid.uuid4().hex[:8]}"
+    pdir = get_project_dir(proj_id)
+    project_saved = False
     dest_video = pdir / f"source{ext}"
 
-    total = 0
-    sniff_head = b""
     try:
+        total_bytes = 0
+        sniff_head = b""
         with dest_video.open("wb") as out_f:
             while True:
                 chunk = await file.read(1024 * 1024)
                 if not chunk:
                     break
-                total += len(chunk)
-                if total > MAX_UPLOAD_BYTES:
+                total_bytes += len(chunk)
+                if total_bytes > MAX_UPLOAD_BYTES:
                     raise HTTPException(
                         status_code=413,
                         detail=f"Video exceeds the {MAX_UPLOAD_MB} MB upload limit.",
@@ -594,71 +597,82 @@ async def api_create_upload(
                 if len(sniff_head) < 16:
                     sniff_head += chunk[: 16 - len(sniff_head)]
                 out_f.write(chunk)
-    except BaseException:
-        # Covers HTTPException (cap) and client disconnects: never leave partial files.
-        shutil.rmtree(pdir, ignore_errors=True)
-        raise
 
-    if total == 0 or not is_supported_video_bytes(sniff_head):
-        shutil.rmtree(pdir, ignore_errors=True)
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported video format. Upload an MP4, MOV, WebM or MKV file.",
-        )
+        if total_bytes == 0 or not is_supported_video_bytes(sniff_head):
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported or empty video. Upload a valid MP4, MOV, WebM, MKV, or M4V file.",
+            )
 
-    try:
         duration, width, height = probe_video(dest_video)
+        if duration < 1.5 or width <= 0 or height <= 0:
+            raise HTTPException(status_code=400, detail="Video must contain a valid video stream at least 1.5 seconds long.")
+
+        transcript: List[TranscriptSegment] = []
+        if subtitle_file is not None:
+            raw_bytes = await subtitle_file.read(MAX_SUBTITLE_BYTES + 1)
+            if len(raw_bytes) > MAX_SUBTITLE_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Subtitle file exceeds the {MAX_SUBTITLE_BYTES // (1024 * 1024)} MB limit.",
+                )
+            raw_sub = raw_bytes.decode("utf-8-sig", errors="replace")
+            transcript = parse_subtitle_text(raw_sub)
+        elif transcript_text and transcript_text.strip():
+            if len(transcript_text.encode("utf-8")) > MAX_SUBTITLE_BYTES:
+                raise HTTPException(status_code=413, detail="Transcript text exceeds the configured subtitle size limit.")
+            raw_text = transcript_text.strip()
+            transcript = (
+                parse_subtitle_text(raw_text)
+                if "-->" in raw_text
+                else parse_plain_transcript(raw_text, duration)
+            )
+
+        thumb_path = pdir / "thumb.jpg"
+        generate_thumbnail(dest_video, thumb_path, duration)
+        energy = compute_energy_peaks(dest_video)
+        clean_title = (title or "").strip()[:300] or Path(filename).stem.replace("_", " ").replace("-", " ")
+
+        project = Project(
+            id=proj_id,
+            title=clean_title,
+            source_type="upload",
+            channel_name="Local Upload",
+            video_path=str(dest_video),
+            video_url=f"/media/projects/{proj_id}/{dest_video.name}",
+            thumbnail_url=f"/media/projects/{proj_id}/thumb.jpg" if thumb_path.exists() else None,
+            duration=round(duration, 2),
+            width=width,
+            height=height,
+            status="analyzing",
+            transcript=transcript,
+            energy_peaks=energy,
+        )
+        save_project(project)
+        project_saved = True
+
+        try:
+            project = _run_analysis(project, load_settings())
+        except TranscriptionError as exc:
+            raise HTTPException(status_code=422, detail=f"Transcription failed: {exc}") from exc
+        return project.model_dump()
+    except HTTPException:
+        if not project_saved:
+            shutil.rmtree(pdir, ignore_errors=True)
+        raise
+    except BaseException:
+        if not project_saved:
+            shutil.rmtree(pdir, ignore_errors=True)
+        raise
     except Exception as exc:
-        shutil.rmtree(pdir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail=f"Could not read video file: {exc}")
-
-    transcript: List[TranscriptSegment] = []
-    if subtitle_file is not None:
-        raw_bytes = await subtitle_file.read(MAX_SUBTITLE_BYTES + 1)
-        if len(raw_bytes) > MAX_SUBTITLE_BYTES:
+        if not project_saved:
             shutil.rmtree(pdir, ignore_errors=True)
-            raise HTTPException(status_code=413, detail="Subtitle file is too large.")
-        raw_sub = raw_bytes.decode("utf-8", errors="ignore")
-        transcript = parse_subtitle_text(raw_sub)
-    elif transcript_text and transcript_text.strip():
-        if len(transcript_text.encode("utf-8")) > MAX_SUBTITLE_BYTES:
-            shutil.rmtree(pdir, ignore_errors=True)
-            raise HTTPException(status_code=413, detail="Transcript text exceeds the configured subtitle size limit.")
-        raw_t = transcript_text.strip()
-        if "-->" in raw_t:
-            transcript = parse_subtitle_text(raw_t)
-        else:
-            transcript = parse_plain_transcript(raw_t, duration)
-
-    thumb_path = pdir / "thumb.jpg"
-    generate_thumbnail(dest_video, thumb_path, duration)
-    energy = compute_energy_peaks(dest_video)
-
-    clean_title = (title or "").strip() or Path(file.filename or "Uploaded Video").stem.replace("_", " ").replace("-", " ")
-
-    project = Project(
-        id=proj_id,
-        title=clean_title,
-        source_type="upload",
-        channel_name="Local Upload",
-        video_path=str(dest_video),
-        video_url=f"/media/projects/{proj_id}/{dest_video.name}",
-        thumbnail_url=f"/media/projects/{proj_id}/thumb.jpg" if thumb_path.exists() else None,
-        duration=round(duration, 2),
-        width=width,
-        height=height,
-        status="analyzing",
-        transcript=transcript,
-        energy_peaks=energy,
-    )
-    save_project(project)
-
-    settings = load_settings()
-    try:
-        project = _run_analysis(project, settings)
-    except TranscriptionError as exc:
-        raise HTTPException(status_code=422, detail=f"Transcription failed: {exc}")
-    return project.model_dump()
+        logger.exception("Video upload processing failed for project %s", proj_id)
+        raise HTTPException(status_code=400, detail="Could not process the uploaded video. Verify the file and try again.") from exc
+    finally:
+        await file.close()
+        if subtitle_file is not None:
+            await subtitle_file.close()
 
 
 @app.post("/api/projects/{project_id}/reanalyze")
