@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 from typing import Callable, List, Optional
 
-from ffutil import filter_quote
+from ffutil import FFMPEG_BIN, filter_quote
 from models import Clip, EXPORTS_DIR, TranscriptSegment, WordTiming
 
 # Vertical export presets. Every render honors a hard 1080x1920 full-HD floor.
@@ -34,28 +35,36 @@ def _esc_ass(txt: str) -> str:
 
 
 def _collect_clip_words(transcript: List[TranscriptSegment], start: float, end: float) -> List[WordTiming]:
+    clip_duration = max(0.0, end - start)
+    if clip_duration <= 0:
+        return []
     words: List[WordTiming] = []
     for seg in transcript:
-        if seg.end < start or seg.start > end:
+        if seg.end <= start or seg.start >= end:
             continue
         if seg.words:
-            for w in seg.words:
-                if w.end >= start and w.start <= end:
-                    rel_s = max(0.0, w.start - start)
-                    rel_e = max(rel_s + 0.08, min(end - start, w.end - start))
-                    words.append(WordTiming(word=w.word, start=rel_s, end=rel_e))
+            for word in seg.words:
+                if word.end <= start or word.start >= end:
+                    continue
+                rel_start = max(0.0, min(clip_duration, word.start - start))
+                rel_end = max(rel_start, min(clip_duration, word.end - start))
+                if rel_end > rel_start:
+                    words.append(WordTiming(word=word.word, start=rel_start, end=rel_end))
         else:
             tokens = seg.text.split()
             if not tokens:
                 continue
-            seg_s = max(start, seg.start)
-            seg_e = min(end, seg.end)
-            dur = max(0.2, seg_e - seg_s)
-            step = dur / len(tokens)
-            for idx, tok in enumerate(tokens):
-                rs = (seg_s - start) + idx * step
-                re_ = rs + step
-                words.append(WordTiming(word=tok, start=rs, end=re_))
+            seg_start = max(start, seg.start)
+            seg_end = min(end, seg.end)
+            segment_duration = seg_end - seg_start
+            if segment_duration <= 0:
+                continue
+            step = segment_duration / len(tokens)
+            for index, token in enumerate(tokens):
+                rel_start = seg_start - start + index * step
+                rel_end = seg_end - start if index == len(tokens) - 1 else rel_start + step
+                if rel_end > rel_start:
+                    words.append(WordTiming(word=token, start=rel_start, end=rel_end))
     return words
 
 
@@ -160,9 +169,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             for active_idx, w in enumerate(group):
                 ev_s = w.start
                 if active_idx + 1 < len(group):
-                    ev_e = max(ev_s + 0.06, group[active_idx + 1].start)
+                    ev_e = min(clip_dur, max(ev_s + 0.04, group[active_idx + 1].start))
                 else:
-                    ev_e = max(ev_s + 0.08, w.end)
+                    ev_e = min(clip_dur, max(ev_s + 0.04, w.end))
+                if ev_e <= ev_s:
+                    continue
                 parts = []
                 for idx2, gw in enumerate(group):
                     word_txt = gw.word.upper() if pal["upper"] else gw.word
@@ -188,24 +199,25 @@ def export_clip_mp4(
     transcript: List[TranscriptSegment],
     on_progress: Optional[Callable[[int], None]] = None,
 ) -> Path:
+    if not re.fullmatch(r"proj_[a-f0-9]{8}", clip.project_id):
+        raise ValueError("Invalid project ID for export.")
+    if not re.fullmatch(r"clip_[a-f0-9]{8}", clip.id):
+        raise ValueError("Invalid clip ID for export.")
+    if not video_path.is_file():
+        raise FileNotFoundError("Source video file is missing.")
+
     out_w, out_h = resolve_output_size(clip.style.resolution)
-
     out_name = f"{clip.project_id}_{clip.id}_{clip.style.layout}.mp4"
-    out_path = EXPORTS_DIR / out_name
-    ass_path = EXPORTS_DIR / f"{clip.id}.ass"
-
+    out_path = (EXPORTS_DIR / out_name).resolve()
+    if not out_path.is_relative_to(EXPORTS_DIR.resolve()):
+        raise ValueError("Invalid export output path.")
+    ass_path = EXPORTS_DIR / f"{clip.project_id}_{clip.id}.ass"
     has_ass = build_ass_subtitles(clip, transcript, ass_path, out_w, out_h)
 
     layout = clip.style.layout
     pan_x = max(-1.0, min(1.0, clip.style.pan_x))
 
-    # Build base video filter graph outputting [vbase] at out_w x out_h
     if layout == "blur_fill":
-        fg_h = int(round(out_w * (src_h / max(1, src_w))))
-        if fg_h % 2 == 1:
-            fg_h += 1
-        if fg_h > out_h:
-            fg_h = out_h
         filter_graph = (
             f"[0:v]split=2[bg][fg];"
             f"[bg]scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"
@@ -216,7 +228,6 @@ def export_clip_mp4(
     elif layout == "split_screen":
         half_h = out_h // 2
         if src_w / max(1, src_h) > 1.15:
-            # Left/host on top, Right/guest on bottom
             crop_w = int(round(src_w * 0.56))
             crop_w -= crop_w % 2
             x_left = 0
@@ -237,7 +248,6 @@ def export_clip_mp4(
                 f"[top][bot]vstack=inputs=2[vbase]"
             )
     else:
-        # center_crop with pan_x
         target_ratio = 9.0 / 16.0
         src_ratio = src_w / max(1, src_h)
         if src_ratio > target_ratio:
@@ -257,8 +267,6 @@ def export_clip_mp4(
             )
 
     if has_ass:
-        # filter_quote survives FFmpeg 4.x-9.x option parsing on all platforms
-        # (shlex.quote breaks on Windows drive-letter colons with modern FFmpeg).
         filter_graph += f";[vbase]ass=filename={filter_quote(str(ass_path))}[vout]"
     else:
         filter_graph += ";[vbase]null[vout]"
@@ -268,7 +276,10 @@ def export_clip_mp4(
         on_progress(15)
 
     cmd = [
-        "ffmpeg",
+        FFMPEG_BIN,
+        "-hide_banner",
+        "-loglevel",
+        "error",
         "-y",
         "-ss",
         f"{clip.start:.3f}",
@@ -302,22 +313,52 @@ def export_clip_mp4(
         str(out_path),
     ]
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        line = line.strip()
-        if line.startswith("out_time_us="):
+    proc = None
+    succeeded = False
+    log_tail: List[str] = []
+    try:
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("FFmpeg was not found. Install FFmpeg or set CLIPPULSE_FFMPEG_PATH.") from exc
+
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            line = line.strip()
+            if line.startswith("out_time_us="):
+                try:
+                    microseconds = int(line.split("=", 1)[1])
+                    pct = min(96, max(18, int(18 + (microseconds / (clip_dur * 1_000_000)) * 78)))
+                    if on_progress:
+                        on_progress(pct)
+                except ValueError:
+                    pass
+            elif line and not line.startswith(("frame=", "fps=", "stream_", "bitrate=", "total_size=", "out_time=", "dup_frames=", "drop_frames=", "speed=", "progress=")):
+                log_tail.append(line)
+                log_tail = log_tail[-20:]
+
+        ret = proc.wait()
+        if ret != 0 or not out_path.is_file() or out_path.stat().st_size < 1024:
+            raise RuntimeError(f"FFmpeg export failed: {' / '.join(log_tail)[-500:] or f'exit code {ret}'}")
+        succeeded = True
+        if on_progress:
+            on_progress(100)
+        return out_path
+    finally:
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
             try:
-                us = int(line.split("=", 1)[1])
-                pct = min(96, max(18, int(18 + (us / (clip_dur * 1_000_000)) * 78)))
-                if on_progress:
-                    on_progress(pct)
-            except ValueError:
-                pass
-    stderr_txt = proc.stderr.read() if proc.stderr else ""
-    ret = proc.wait()
-    if ret != 0 or not out_path.exists():
-        raise RuntimeError(f"FFmpeg export failed: {stderr_txt[-500:]}")
-    if on_progress:
-        on_progress(100)
-    return out_path
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+        if ass_path.exists():
+            ass_path.unlink(missing_ok=True)
+        if not succeeded and out_path.exists():
+            out_path.unlink(missing_ok=True)
