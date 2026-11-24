@@ -125,11 +125,12 @@ clippulse/
 ```bash
 # Backend .env (create if needed)
 CLIPPULSE_DATA_DIR=./data          # Override data directory
-CLIPPULSE_FFMPEG_PATH=ffmpeg       # Custom ffmpeg binary path
+CLIPPULSE_FFMPEG_PATH=ffmpeg       # Custom FFmpeg binary path
+CLIPPULSE_FFPROBE_PATH=ffprobe     # Custom FFprobe binary path
 CLIPPULSE_MAX_UPLOAD_MB=1024       # Video upload size cap (1–4096 MB)
 CLIPPULSE_MAX_SUBTITLE_MB=5        # Subtitle/transcript cap (1–25 MB)
 CLIPPULSE_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-CLIPPULSE_API_TOKEN=               # Optional shared API token for remote API clients
+CLIPPULSE_API_TOKEN=               # Optional shared token (use a long random value for remote clients)
 ```
 
 ---
