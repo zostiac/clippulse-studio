@@ -40,7 +40,7 @@ The application is best treated as a **local-first tool**. A public or multi-use
 
 ### CI
 
-The current workflow checks backend compilation/smoke behavior and runs frontend lint plus a production build. These checks are useful regression gates, but do not exercise the complete application in a real browser.
+The existing main-branch workflow checks backend compilation/smoke behavior and frontend lint plus a production build. This PR adds a native Node unit-test step for the transcript timing utility. These checks are useful regression gates, but do not exercise the complete application in a real browser.
 
 ---
 
@@ -94,7 +94,7 @@ Add targeted tests for:
 
 ## Verification status and limitations
 
-- The repository's latest reviewed GitHub Actions run completed successfully for backend smoke checks and frontend lint/build.
+- The latest reviewed main-branch GitHub Actions run completed successfully for backend smoke checks and frontend lint/build. The new PR workflow run, which also includes frontend unit tests, is pending at the time of this update.
 - This review did **not** independently launch the application in a browser or complete a real media upload/transcription/export cycle.
 - No claim is made that remote production deployment is safe without the additional controls listed above.
 - Any new changes should pass the repository's CI workflow before merge.
