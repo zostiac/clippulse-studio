@@ -224,9 +224,12 @@ def _link_or_copy(src: Path, dst: Path) -> None:
 
 def _run_analysis(project: Project, settings: AppSettings) -> Project:
     """Transcribe/score a project, persisting `analyzing` then `ready`/`error`."""
-    project.status = "analyzing"
-    project.error_message = None
-    save_project(project)
+    with _store_lock:
+        if any(item.export_status == "rendering" for item in project.clips):
+            raise HTTPException(status_code=409, detail="Wait for active exports to finish before analyzing this project.")
+        project.status = "analyzing"
+        project.error_message = None
+        save_project(project)
     try:
         transcript, clips, engine_used = analyze_project(
             project.id,
@@ -440,13 +443,15 @@ def api_get_project(project_id: str):
 def api_delete_project(project_id: str):
     with _store_lock:
         project = load_project(project_id)
-        if project and any(item.export_status == "rendering" for item in project.clips):
-            raise HTTPException(status_code=409, detail="Wait for active exports to finish before deleting this project.")
-    with _EXPORT_LOCK:
-        if any(key.startswith(f"{project_id}:") for key in _ACTIVE_EXPORTS):
-            raise HTTPException(status_code=409, detail="Wait for active exports to finish before deleting this project.")
-    if not delete_project(project_id):
-        raise HTTPException(status_code=404, detail="Project not found")
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project.status == "analyzing" or any(item.export_status == "rendering" for item in project.clips):
+            raise HTTPException(status_code=409, detail="Wait for analysis and exports to finish before deleting this project.")
+        with _EXPORT_LOCK:
+            if any(key.startswith(f"{project_id}:") for key in _ACTIVE_EXPORTS):
+                raise HTTPException(status_code=409, detail="Wait for active exports to finish before deleting this project.")
+        if not delete_project(project_id):
+            raise HTTPException(status_code=404, detail="Project not found")
     return {"deleted": True}
 
 
@@ -701,134 +706,138 @@ def api_reanalyze(project_id: str):
 
 @app.put("/api/projects/{project_id}/transcript")
 def api_update_transcript(project_id: str, payload: UpdateTranscriptRequest):
-    proj = load_project(project_id)
-    if not proj:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if any(item.export_status == "rendering" for item in proj.clips):
-        raise HTTPException(status_code=409, detail="Wait for active exports to finish before editing the transcript.")
     from ingest import distribute_words
-    updated: List[TranscriptSegment] = []
-    for seg in payload.segments:
-        words = distribute_words(seg.text, seg.start, seg.end)
-        updated.append(TranscriptSegment(id=seg.id, start=seg.start, end=seg.end, text=seg.text, words=words))
-    proj.transcript = updated
-    save_project(proj)
-    return proj.model_dump()
+    with _store_lock:
+        proj = load_project(project_id)
+        if not proj:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if proj.status == "analyzing" or any(item.export_status == "rendering" for item in proj.clips):
+            raise HTTPException(status_code=409, detail="Wait for analysis and exports to finish before editing the transcript.")
+        updated: List[TranscriptSegment] = []
+        for seg in payload.segments:
+            words = distribute_words(seg.text, seg.start, seg.end)
+            updated.append(TranscriptSegment(id=seg.id, start=seg.start, end=seg.end, text=seg.text, words=words))
+        proj.transcript = updated
+        save_project(proj)
+        return proj.model_dump()
 
 
 @app.post("/api/projects/{project_id}/clips")
 def api_create_clip(project_id: str, payload: CreateClipRequest):
-    proj = load_project(project_id)
-    if not proj:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if proj.duration < 1.5:
-        raise HTTPException(status_code=400, detail="This source video is too short to create a clip.")
-    min_clip_duration = min(2.0, proj.duration)
-    st = max(0.0, min(float(payload.start), proj.duration - min_clip_duration))
-    en = max(st + min_clip_duration, min(float(payload.end), proj.duration))
-    title = (payload.title or "").strip()[:300] or "Custom Viral Clip"
-    settings = load_settings()
+    with _store_lock:
+        proj = load_project(project_id)
+        if not proj:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if proj.status == "analyzing":
+            raise HTTPException(status_code=409, detail="Wait for analysis to finish before creating clips.")
+        if proj.duration < 1.5:
+            raise HTTPException(status_code=400, detail="This source video is too short to create a clip.")
+        min_clip_duration = min(2.0, proj.duration)
+        st = max(0.0, min(float(payload.start), proj.duration - min_clip_duration))
+        en = max(st + min_clip_duration, min(float(payload.end), proj.duration))
+        title = (payload.title or "").strip()[:300] or "Custom Viral Clip"
+        settings = load_settings()
+        snippet_txt = " ".join(
+            s.text for s in proj.transcript if s.end >= st and s.start <= en
+        ) or title
+        hook_banner = " ".join(title.split()[:6]).upper()
 
-    snippet_txt = " ".join(
-        s.text for s in proj.transcript if s.end >= st and s.start <= en
-    ) or title
-    hook_banner = " ".join(title.split()[:6]).upper()
-
-    new_clip = Clip(
-        project_id=proj.id,
-        title=title,
-        start=round(st, 2),
-        end=round(en, 2),
-        viral_score=84,
-        sub_scores=SubScores(hook=84, retention=85, shareability=82, clarity=86),
-        reason="Manual custom range selected in timeline studio.",
-        style=ClipStyle(
-            layout=settings.default_layout,
-            caption_style=settings.default_caption_style,
-            hook_banner_text=hook_banner,
-        ),
-        platform_meta=PlatformMeta(
-            youtube_title=f"{title[:82]} #shorts",
-            youtube_description=snippet_txt[:220],
-            youtube_tags=["shorts", "viral", "clips"],
-            instagram_caption=snippet_txt[:220],
-            instagram_hashtags=["#reels", "#viral", "#shorts"],
-            tiktok_caption=title,
-            tiktok_hashtags=["#fyp", "#viral"],
-        ),
-    )
-    proj.clips.insert(0, new_clip)
-    save_project(proj)
-    return new_clip.model_dump()
+        new_clip = Clip(
+            project_id=proj.id,
+            title=title,
+            start=round(st, 2),
+            end=round(en, 2),
+            viral_score=84,
+            sub_scores=SubScores(hook=84, retention=85, shareability=82, clarity=86),
+            reason="Manual custom range selected in timeline studio.",
+            style=ClipStyle(
+                layout=settings.default_layout,
+                caption_style=settings.default_caption_style,
+                hook_banner_text=hook_banner,
+            ),
+            platform_meta=PlatformMeta(
+                youtube_title=f"{title[:82]} #shorts",
+                youtube_description=snippet_txt[:220],
+                youtube_tags=["shorts", "viral", "clips"],
+                instagram_caption=snippet_txt[:220],
+                instagram_hashtags=["#reels", "#viral", "#shorts"],
+                tiktok_caption=title,
+                tiktok_hashtags=["#fyp", "#viral"],
+            ),
+        )
+        proj.clips.insert(0, new_clip)
+        save_project(proj)
+        return new_clip.model_dump()
 
 
 @app.patch("/api/projects/{project_id}/clips/{clip_id}")
 def api_update_clip(project_id: str, clip_id: str, payload: UpdateClipRequest):
-    proj = load_project(project_id)
-    if not proj:
-        raise HTTPException(status_code=404, detail="Project not found")
-    target: Optional[Clip] = None
-    for c in proj.clips:
-        if c.id == clip_id:
-            target = c
-            break
-    if not target:
-        raise HTTPException(status_code=404, detail="Clip not found")
-    if target.export_status == "rendering":
-        raise HTTPException(status_code=409, detail="Wait for this clip's export to finish before editing it.")
+    with _store_lock:
+        proj = load_project(project_id)
+        if not proj:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if proj.status == "analyzing":
+            raise HTTPException(status_code=409, detail="Wait for analysis to finish before editing clips.")
+        target = next((item for item in proj.clips if item.id == clip_id), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="Clip not found")
+        if target.export_status == "rendering":
+            raise HTTPException(status_code=409, detail="Wait for this clip's export to finish before editing it.")
 
-    if payload.title is not None:
-        target.title = payload.title.strip()[:300] or target.title
-    if payload.start is not None or payload.end is not None:
-        if proj.duration < 1.5:
-            raise HTTPException(status_code=400, detail="This source video is too short to trim.")
-        min_duration = min(1.5, proj.duration)
-        next_start = target.start if payload.start is None else float(payload.start)
-        next_end = target.end if payload.end is None else float(payload.end)
-        next_start = max(0.0, min(next_start, proj.duration - min_duration))
-        next_end = max(0.0, min(next_end, proj.duration))
-        if next_end - next_start < min_duration:
-            if payload.start is not None and payload.end is None:
-                next_end = min(proj.duration, next_start + min_duration)
-                next_start = max(0.0, next_end - min_duration)
-            elif payload.end is not None and payload.start is None:
-                next_end = max(min_duration, next_end)
-                next_start = max(0.0, next_end - min_duration)
-            else:
-                next_end = min(proj.duration, next_start + min_duration)
-                next_start = max(0.0, next_end - min_duration)
-        target.start = round(next_start, 2)
-        target.end = round(next_end, 2)
-    if payload.style is not None:
-        target.style = payload.style
-    if payload.platform_meta is not None:
-        target.platform_meta = payload.platform_meta
+        if payload.title is not None:
+            target.title = payload.title.strip()[:300] or target.title
+        if payload.start is not None or payload.end is not None:
+            if proj.duration < 1.5:
+                raise HTTPException(status_code=400, detail="This source video is too short to trim.")
+            min_duration = min(1.5, proj.duration)
+            next_start = target.start if payload.start is None else float(payload.start)
+            next_end = target.end if payload.end is None else float(payload.end)
+            next_start = max(0.0, min(next_start, proj.duration - min_duration))
+            next_end = max(0.0, min(next_end, proj.duration))
+            if next_end - next_start < min_duration:
+                if payload.start is not None and payload.end is None:
+                    next_end = min(proj.duration, next_start + min_duration)
+                    next_start = max(0.0, next_end - min_duration)
+                elif payload.end is not None and payload.start is None:
+                    next_end = max(min_duration, next_end)
+                    next_start = max(0.0, next_end - min_duration)
+                else:
+                    next_end = min(proj.duration, next_start + min_duration)
+                    next_start = max(0.0, next_end - min_duration)
+            target.start = round(next_start, 2)
+            target.end = round(next_end, 2)
+        if payload.style is not None:
+            target.style = payload.style
+        if payload.platform_meta is not None:
+            target.platform_meta = payload.platform_meta
 
-    # Reset export state if geometry/style changed while previously done
-    if payload.start is not None or payload.end is not None or payload.style is not None:
-        if target.export_status == "done":
-            target.export_status = "idle"
-            target.export_progress = 0
-            target.exported_at = None
+        if payload.start is not None or payload.end is not None or payload.style is not None:
+            if target.export_status == "done":
+                target.export_status = "idle"
+                target.export_progress = 0
+                target.exported_at = None
 
-    save_project(proj)
-    return target.model_dump()
+        save_project(proj)
+        return target.model_dump()
 
 
 @app.delete("/api/projects/{project_id}/clips/{clip_id}")
 def api_delete_clip(project_id: str, clip_id: str):
-    proj = load_project(project_id)
-    if not proj:
-        raise HTTPException(status_code=404, detail="Project not found")
-    target = next((item for item in proj.clips if item.id == clip_id), None)
-    if target and target.export_status == "rendering":
-        raise HTTPException(status_code=409, detail="Wait for this clip's export to finish before deleting it.")
-    with _EXPORT_LOCK:
-        if f"{project_id}:{clip_id}" in _ACTIVE_EXPORTS:
+    with _store_lock:
+        proj = load_project(project_id)
+        if not proj:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if proj.status == "analyzing":
+            raise HTTPException(status_code=409, detail="Wait for analysis to finish before deleting clips.")
+        target = next((item for item in proj.clips if item.id == clip_id), None)
+        if target and target.export_status == "rendering":
             raise HTTPException(status_code=409, detail="Wait for this clip's export to finish before deleting it.")
-    proj.clips = [c for c in proj.clips if c.id != clip_id]
-    save_project(proj)
-    return {"deleted": True}
+        with _EXPORT_LOCK:
+            if f"{project_id}:{clip_id}" in _ACTIVE_EXPORTS:
+                raise HTTPException(status_code=409, detail="Wait for this clip's export to finish before deleting it.")
+        proj.clips = [item for item in proj.clips if item.id != clip_id]
+        save_project(proj)
+        return {"deleted": True}
 
 
 def _run_export_job(project_id: str, clip_id: str) -> None:
@@ -904,6 +913,8 @@ def api_export_clip(project_id: str, clip_id: str):
         proj = load_project(project_id)
         if not proj:
             raise HTTPException(status_code=404, detail="Project not found")
+        if proj.status == "analyzing":
+            raise HTTPException(status_code=409, detail="Wait for analysis to finish before exporting clips.")
         clip = next((item for item in proj.clips if item.id == clip_id), None)
         if not clip:
             raise HTTPException(status_code=404, detail="Clip not found")
@@ -936,6 +947,8 @@ def api_export_all(project_id: str):
         proj = load_project(project_id)
         if not proj:
             raise HTTPException(status_code=404, detail="Project not found")
+        if proj.status == "analyzing":
+            raise HTTPException(status_code=409, detail="Wait for analysis to finish before exporting clips.")
         queued_ids = []
         for item in proj.clips:
             if item.export_status != "rendering":
