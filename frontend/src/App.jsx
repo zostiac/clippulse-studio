@@ -74,14 +74,23 @@ export default function App() {
     if (queued.timer) {
       clearTimeout(queued.timer);
       queued.timer = null;
+      queued.error = null;
+      queued.promise = Promise.resolve(queued.promise)
+        .catch(() => {})
+        .then(() => api.updateClip(projectId, clipId, queued.patch));
+    } else if (queued.error) {
+      // A debounced save failed; retry it before a destructive or export action.
+      queued.error = null;
       queued.promise = Promise.resolve(queued.promise)
         .catch(() => {})
         .then(() => api.updateClip(projectId, clipId, queued.patch));
     }
     try {
       await queued.promise;
-    } finally {
       if (patchTimerRef.current.get(key) === queued) patchTimerRef.current.delete(key);
+    } catch (error) {
+      queued.error = error;
+      throw error;
     }
   }
 
@@ -160,12 +169,12 @@ export default function App() {
       queued.promise = Promise.resolve(queued.promise)
         .catch(() => {})
         .then(() => api.updateClip(projId, clipId, queued.patch))
-        .catch((e) => {
-          console.error("Failed to save clip update:", e);
-          throw e;
-        })
-        .finally(() => {
+        .then(() => {
           if (patchTimerRef.current.get(key) === queued) patchTimerRef.current.delete(key);
+        })
+        .catch((e) => {
+          queued.error = e;
+          console.error("Failed to save clip update; it will retry before the next action:", e);
         });
     }, 300);
     patchTimerRef.current.set(key, queued);
