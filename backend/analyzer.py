@@ -72,6 +72,31 @@ def _get_local_whisper(model_name: str):
         return _whisper_cache[model_name]
 
 
+def _extract_audio(video_path: Path, out_args: List[str], out_path: Path) -> None:
+    """Extract mono 16 kHz audio with ffmpeg, with diagnosable errors."""
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
+         "stream=index", "-of", "csv=p=0", str(video_path)],
+        capture_output=True, text=True,
+    )
+    if probe.returncode == 0 and not probe.stdout.strip():
+        raise RuntimeError(
+            "This video has no audio track, so there is nothing to transcribe. "
+            "Upload a .srt/.vtt subtitle file or paste a transcript with the video instead."
+        )
+    cmd = ["ffmpeg", "-y", "-i", str(video_path), "-vn", "-ac", "1", "-ar", "16000"]
+    cmd += out_args + [str(out_path)]
+    try:
+        subprocess.run(cmd, capture_output=True, check=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError("FFmpeg not found on PATH. Install FFmpeg and restart the server.") from exc
+    except subprocess.CalledProcessError as exc:
+        tail = (exc.stderr or b"").decode(errors="ignore").strip().splitlines()[-3:]
+        raise RuntimeError(
+            "Audio extraction failed (ffmpeg): " + (" / ".join(tail) or str(exc))
+        ) from exc
+
+
 def _energy_in_range(energy_peaks: List[float], start: float, end: float, duration: float) -> Tuple[float, float]:
     if not energy_peaks or duration <= 0:
         return 0.5, 0.7
@@ -195,22 +220,22 @@ def _derive_title_and_hook(segs: List[TranscriptSegment]) -> Tuple[str, str]:
 
 def transcribe_with_local_whisper(video_path: Path, model_name: str = "tiny") -> List[TranscriptSegment]:
     wav_path = video_path.parent / "audio_local.wav"
-    subprocess.run(
-        [
-            "ffmpeg", "-y", "-i", str(video_path),
-            "-vn", "-ac", "1", "-ar", "16000", "-f", "wav",
-            str(wav_path),
-        ],
-        capture_output=True,
-        check=True,
-    )
     try:
+        _extract_audio(video_path, ["-f", "wav"], wav_path)
         model = _get_local_whisper(model_name or "tiny")
-        segs_iter, _ = model.transcribe(
-            str(wav_path),
-            word_timestamps=True,
-            vad_filter=True,
-        )
+        try:
+            segs_iter, _ = model.transcribe(
+                str(wav_path),
+                word_timestamps=True,
+                vad_filter=True,
+            )
+        except Exception:
+            # VAD (onnxruntime) can be unavailable on some machines; plain
+            # transcription still works without it.
+            segs_iter, _ = model.transcribe(
+                str(wav_path),
+                word_timestamps=True,
+            )
         segments: List[TranscriptSegment] = []
         for s in segs_iter:
             txt = (s.text or "").strip()
@@ -251,15 +276,7 @@ def transcribe_with_cloud_whisper(
     if not cfg or "whisper_url" not in cfg:
         return []
     audio_path = video_path.parent / "audio_whisper.mp3"
-    subprocess.run(
-        [
-            "ffmpeg", "-y", "-i", str(video_path),
-            "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k",
-            str(audio_path),
-        ],
-        capture_output=True,
-        check=True,
-    )
+    _extract_audio(video_path, ["-b:a", "48k"], audio_path)
     try:
         with audio_path.open("rb") as f:
             resp = httpx.post(
@@ -625,7 +642,8 @@ def analyze_project(
         if not transcript and attempted:
             raise TranscriptionError(
                 "; ".join(failures)
-                + ". Enable a free cloud provider in Settings or turn on Local Whisper."
+                + ". Enable a free cloud provider in Settings, turn on Local Whisper, "
+                "or upload a .srt/.vtt subtitle file / paste a transcript with the video."
             )
 
     # 2. LLM viral clip scoring (if free-tier or OpenAI key configured), else Local Heuristic

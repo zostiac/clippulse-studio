@@ -120,4 +120,29 @@ r = client.post("/api/projects/upload", files=files)
 assert r.status_code == 413, (r.status_code, r.text)
 print("upload cap OK ->", r.json()["detail"])
 
+# Transcription audio-extraction diagnostics (skipped when ffmpeg is absent).
+import shutil as _shutil  # noqa: E402
+import subprocess as _subprocess  # noqa: E402
+
+if _shutil.which("ffmpeg") and _shutil.which("ffprobe"):
+    import tempfile
+
+    from analyzer import _extract_audio
+
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        _subprocess.run(
+            ["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=10:d=1",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", str(td / "noaudio.mp4")],
+            check=True, capture_output=True,
+        )
+        try:
+            _extract_audio(td / "noaudio.mp4", ["-f", "wav"], td / "a.wav")
+            raise AssertionError("no-audio video did not raise")
+        except RuntimeError as exc:
+            assert "no audio track" in str(exc), exc
+    print("audio extraction OK (friendly no-audio error)")
+else:
+    print("audio extraction SKIPPED (ffmpeg not on PATH)")
+
 print("ALL SMOKE TESTS PASSED")
