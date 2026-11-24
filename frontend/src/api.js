@@ -2,7 +2,10 @@ async function req(url, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
+    const headers = new Headers(options.headers || {});
+    const apiToken = import.meta.env.VITE_CLIPPULSE_API_TOKEN;
+    if (apiToken) headers.set("X-API-Token", apiToken);
+    const res = await fetch(url, { ...options, headers, signal: controller.signal });
     const contentType = res.headers.get("content-type") || "";
     const isJson = contentType.includes("application/json");
     const data = isJson ? await res.json() : await res.text();
