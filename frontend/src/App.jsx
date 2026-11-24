@@ -92,6 +92,7 @@ export default function App() {
       queued.error = null;
       queued.promise = Promise.resolve(queued.promise)
         .catch(() => {})
+        .then(() => api.updateClip(projectId, clipId, queued.patch))
         .then((updatedClip) => {
           applyServerClipUpdate(projectId, updatedClip);
           return updatedClip;
@@ -101,7 +102,11 @@ export default function App() {
       queued.error = null;
       queued.promise = Promise.resolve(queued.promise)
         .catch(() => {})
-        .then(() => api.updateClip(projectId, clipId, queued.patch));
+        .then(() => api.updateClip(projectId, clipId, queued.patch))
+        .then((updatedClip) => {
+          applyServerClipUpdate(projectId, updatedClip);
+          return updatedClip;
+        });
     }
     try {
       await queued.promise;
@@ -111,6 +116,7 @@ export default function App() {
         applyServerClipUpdate(projectId, updatedClip);
       }
       if (patchTimerRef.current.get(key) === queued) patchTimerRef.current.delete(key);
+      setActionError("");
     } catch (error) {
       queued.error = error;
       throw error;
@@ -203,6 +209,7 @@ export default function App() {
       queued.timer = null;
       queued.promise = Promise.resolve(queued.promise)
         .catch(() => {})
+        .then(() => api.updateClip(projId, clipId, queued.patch))
         .then((updatedClip) => {
           applyServerClipUpdate(projId, updatedClip);
           if (patchTimerRef.current.get(key) === queued) patchTimerRef.current.delete(key);
