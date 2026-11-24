@@ -67,6 +67,31 @@ export default function App() {
     patchTimerRef.current.clear();
   }, []);
 
+  async function flushClipPatch(projectId, clipId) {
+    const key = `${projectId}:${clipId}`;
+    const queued = patchTimerRef.current.get(key);
+    if (!queued) return;
+    if (queued.timer) {
+      clearTimeout(queued.timer);
+      queued.timer = null;
+      queued.promise = Promise.resolve(queued.promise)
+        .catch(() => {})
+        .then(() => api.updateClip(projectId, clipId, queued.patch));
+    }
+    try {
+      await queued.promise;
+    } finally {
+      if (patchTimerRef.current.get(key) === queued) patchTimerRef.current.delete(key);
+    }
+  }
+
+  async function flushProjectPatches(projectId) {
+    const clipIds = [...patchTimerRef.current.keys()]
+      .filter((key) => key.startsWith(`${projectId}:`))
+      .map((key) => key.slice(projectId.length + 1));
+    await Promise.all(clipIds.map((clipId) => flushClipPatch(projectId, clipId)));
+  }
+
   const selectedClip =
     activeProject?.clips?.find((c) => c.id === selectedClipId) ||
     activeProject?.clips?.[0] ||
@@ -84,12 +109,7 @@ export default function App() {
   }
 
   async function handleDeleteProject(id) {
-    for (const [key, queued] of patchTimerRef.current.entries()) {
-      if (key.startsWith(`${id}:`)) {
-        clearTimeout(queued.timer);
-        patchTimerRef.current.delete(key);
-      }
-    }
+    await flushProjectPatches(id);
     await api.deleteProject(id);
     setProjects((prev) => prev.filter((p) => p.id !== id));
     if (activeProject?.id === id) {
@@ -129,17 +149,26 @@ export default function App() {
 
     const key = `${projId}:${clipId}`;
     const existing = patchTimerRef.current.get(key);
-    if (existing) clearTimeout(existing.timer);
-    const mergedPatch = { ...(existing?.patch || {}), ...patch };
-    const timer = setTimeout(async () => {
-      patchTimerRef.current.delete(key);
-      try {
-        await api.updateClip(projId, clipId, mergedPatch);
-      } catch (e) {
-        console.error("Failed to save clip update:", e);
-      }
+    if (existing?.timer) clearTimeout(existing.timer);
+    const queued = {
+      patch: { ...(existing?.patch || {}), ...patch },
+      timer: null,
+      promise: existing?.promise || Promise.resolve(),
+    };
+    queued.timer = setTimeout(() => {
+      queued.timer = null;
+      queued.promise = Promise.resolve(queued.promise)
+        .catch(() => {})
+        .then(() => api.updateClip(projId, clipId, queued.patch))
+        .catch((e) => {
+          console.error("Failed to save clip update:", e);
+          throw e;
+        })
+        .finally(() => {
+          if (patchTimerRef.current.get(key) === queued) patchTimerRef.current.delete(key);
+        });
     }, 300);
-    patchTimerRef.current.set(key, { patch: mergedPatch, timer });
+    patchTimerRef.current.set(key, queued);
   }
 
   async function handleCreateClip(payload) {
@@ -154,24 +183,16 @@ export default function App() {
 
   async function handleDeleteClip(clipId) {
     if (!activeProject) return;
-    const patchKey = `${activeProject.id}:${clipId}`;
-    const pending = patchTimerRef.current.get(patchKey);
-    if (pending) {
-      clearTimeout(pending.timer);
-      patchTimerRef.current.delete(patchKey);
-    }
+    await flushClipPatch(activeProject.id, clipId);
     await api.deleteClip(activeProject.id, clipId);
-    setActiveProject((prev) => {
-      const remaining = prev.clips.filter((c) => c.id !== clipId);
-      if (selectedClipId === clipId) {
-        setSelectedClipId(remaining[0]?.id || null);
-      }
-      return { ...prev, clips: remaining };
-    });
+    const remaining = activeProject.clips.filter((c) => c.id !== clipId);
+    setActiveProject((prev) => ({ ...prev, clips: prev.clips.filter((c) => c.id !== clipId) }));
+    if (selectedClipId === clipId) setSelectedClipId(remaining[0]?.id || null);
   }
 
   async function handleReanalyze() {
     if (!activeProject) return;
+    await flushProjectPatches(activeProject.id);
     setReanalyzing(true);
     try {
       const updated = await api.reanalyzeProject(activeProject.id);
@@ -190,14 +211,8 @@ export default function App() {
 
   async function handleExportClip() {
     if (!activeProject || !selectedClip) return;
-    // Flush this clip's queued edits before starting its export.
-    const patchKey = `${activeProject.id}:${selectedClip.id}`;
-    const pending = patchTimerRef.current.get(patchKey);
-    if (pending) {
-      clearTimeout(pending.timer);
-      patchTimerRef.current.delete(patchKey);
-      await api.updateClip(activeProject.id, selectedClip.id, pending.patch);
-    }
+    // Wait for any queued or in-flight edits before rendering this version.
+    await flushClipPatch(activeProject.id, selectedClip.id);
     const updatedClip = await api.exportClip(activeProject.id, selectedClip.id);
     setActiveProject((prev) => ({
       ...prev,
@@ -207,6 +222,7 @@ export default function App() {
 
   async function handleExportAll() {
     if (!activeProject) return;
+    await flushProjectPatches(activeProject.id);
     const updatedProj = await api.exportAll(activeProject.id);
     setActiveProject(updatedProj);
   }
