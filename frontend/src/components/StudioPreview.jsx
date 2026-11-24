@@ -90,20 +90,25 @@ export default function StudioPreview({
     };
   }, [onSeekRef, previewMode, onTimeUpdate]);
 
-  // 60fps time sync & clip loop enforcement
+  // Sync only while playing, and update React state at a modest cadence.
+  // The previous always-on 60fps loop re-rendered the entire editor while paused.
   useEffect(() => {
-    if (previewMode !== "live") return;
+    if (previewMode !== "live" || !playing) return;
     let rafId;
-    const tick = () => {
-      const v = mainVideoRef.current;
-      if (v && clip) {
-        const t = v.currentTime;
-        onTimeUpdate(t);
-        if (auxVideoRef.current && Math.abs(auxVideoRef.current.currentTime - t) > 0.12) {
-          auxVideoRef.current.currentTime = t;
+    let lastUiUpdate = 0;
+    const tick = (now) => {
+      const video = mainVideoRef.current;
+      if (video && clip && !video.paused) {
+        const time = video.currentTime;
+        if (now - lastUiUpdate >= 66) {
+          onTimeUpdate(time);
+          lastUiUpdate = now;
         }
-        if (loopClip && !v.paused && t >= clip.end) {
-          v.currentTime = clip.start;
+        if (auxVideoRef.current && Math.abs(auxVideoRef.current.currentTime - time) > 0.12) {
+          auxVideoRef.current.currentTime = time;
+        }
+        if (loopClip && time >= clip.end) {
+          video.currentTime = clip.start;
           if (auxVideoRef.current) auxVideoRef.current.currentTime = clip.start;
         }
       }
@@ -111,7 +116,7 @@ export default function StudioPreview({
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [clip?.id, clip?.start, clip?.end, loopClip, previewMode]);
+  }, [clip?.id, clip?.start, clip?.end, loopClip, previewMode, playing, onTimeUpdate]);
 
   function togglePlay() {
     const v = mainVideoRef.current;
@@ -120,12 +125,12 @@ export default function StudioPreview({
       if (previewMode === "live" && clip && (v.currentTime < clip.start || v.currentTime >= clip.end)) {
         v.currentTime = clip.start;
       }
-      v.play().catch(() => {});
+      const playPromise = v.play();
       if (auxVideoRef.current) {
         auxVideoRef.current.currentTime = v.currentTime;
         auxVideoRef.current.play().catch(() => {});
       }
-      setPlaying(true);
+      Promise.resolve(playPromise).then(() => setPlaying(true)).catch(() => setPlaying(false));
     } else {
       v.pause();
       if (auxVideoRef.current) auxVideoRef.current.pause();
