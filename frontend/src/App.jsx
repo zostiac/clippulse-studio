@@ -87,6 +87,10 @@ export default function App() {
     }
     try {
       await queued.promise;
+      if (queued.error) {
+        queued.error = null;
+        await api.updateClip(projectId, clipId, queued.patch);
+      }
       if (patchTimerRef.current.get(key) === queued) patchTimerRef.current.delete(key);
     } catch (error) {
       queued.error = error;
@@ -254,9 +258,15 @@ export default function App() {
       <HeaderBar
         project={activeProject}
         settings={settings}
-        onGoHome={() => {
+        onGoHome={async () => {
+          if (activeProject) await flushProjectPatches(activeProject.id);
           setActiveProject(null);
-          api.listProjects().then(setProjects).catch(() => {});
+          setSelectedClipId(null);
+          try {
+            setProjects(await api.listProjects());
+          } catch (error) {
+            console.error("Could not refresh projects:", error);
+          }
         }}
         onOpenSettings={() => setSettingsOpen(true)}
         onExportAll={handleExportAll}
