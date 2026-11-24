@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -19,9 +20,18 @@ SETTINGS_FILE = DATA_DIR / "settings.json"
 COOKIES_FILE = DATA_DIR / "youtube_cookies.txt"
 
 # Upload guardrails (override with CLIPPULSE_MAX_UPLOAD_MB / CLIPPULSE_MAX_SUBTITLE_MB)
-MAX_UPLOAD_MB = int(os.environ.get("CLIPPULSE_MAX_UPLOAD_MB", "1024"))
+def _positive_env_int(name: str, default: int, maximum: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(1, min(value, maximum))
+
+
+MAX_UPLOAD_MB = _positive_env_int("CLIPPULSE_MAX_UPLOAD_MB", 1024, 4096)
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
-MAX_SUBTITLE_BYTES = int(os.environ.get("CLIPPULSE_MAX_SUBTITLE_MB", "5")) * 1024 * 1024
+MAX_SUBTITLE_MB = _positive_env_int("CLIPPULSE_MAX_SUBTITLE_MB", 5, 25)
+MAX_SUBTITLE_BYTES = MAX_SUBTITLE_MB * 1024 * 1024
 
 for d in (PROJECTS_DIR, DEMOS_DIR, EXPORTS_DIR):
     d.mkdir(parents=True, exist_ok=True)
@@ -47,11 +57,11 @@ class TranscriptSegment(BaseModel):
 
 class ClipStyle(BaseModel):
     layout: Literal["center_crop", "blur_fill", "split_screen"] = "center_crop"
-    pan_x: float = 0.0
+    pan_x: float = Field(default=0.0, ge=-1.0, le=1.0)
     caption_style: Literal["hormozi", "beast", "minimal", "neon", "off"] = "hormozi"
     caption_position: Literal["top", "middle", "bottom"] = "bottom"
-    font_size: int = 58
-    words_per_line: int = 3
+    font_size: int = Field(default=58, ge=24, le=100)
+    words_per_line: int = Field(default=3, ge=1, le=6)
     show_hook_banner: bool = True
     hook_banner_text: str = ""
     # Vertical exports never drop below the 1080x1920 floor.
@@ -139,11 +149,23 @@ class AppSettings(BaseModel):
     default_layout: Literal["center_crop", "blur_fill", "split_screen"] = "center_crop"
 
 
-_store_lock = threading.Lock()
+# Re-entrant because request/export flows often hold the store lock while
+# calling save_project(), which also acquires it.
+_store_lock = threading.RLock()
+
+
+def _project_path(project_id: str) -> Optional[Path]:
+    if not re.fullmatch(r"proj_[a-f0-9]{8}", str(project_id or "")):
+        return None
+    root = PROJECTS_DIR.resolve()
+    path = (root / project_id).resolve()
+    return path if path.is_relative_to(root) else None
 
 
 def get_project_dir(project_id: str) -> Path:
-    d = PROJECTS_DIR / project_id
+    d = _project_path(project_id)
+    if d is None:
+        raise ValueError("Invalid project ID.")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -158,7 +180,10 @@ def save_project(project: Project) -> None:
 
 
 def load_project(project_id: str) -> Optional[Project]:
-    meta_path = PROJECTS_DIR / project_id / "project.json"
+    project_dir = _project_path(project_id)
+    if project_dir is None:
+        return None
+    meta_path = project_dir / "project.json"
     if not meta_path.exists():
         return None
     try:
@@ -182,8 +207,8 @@ def list_projects() -> List[Project]:
 
 def delete_project(project_id: str) -> bool:
     import shutil
-    pdir = PROJECTS_DIR / project_id
-    if pdir.exists():
+    pdir = _project_path(project_id)
+    if pdir is not None and pdir.exists():
         shutil.rmtree(pdir, ignore_errors=True)
         return True
     return False
