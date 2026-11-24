@@ -117,8 +117,8 @@ clippulse/
 
 - The API is intended for local use by default. Requests from non-loopback clients are rejected unless `CLIPPULSE_API_TOKEN` is configured.
 - CORS uses an explicit local-origin allowlist. Add only the exact browser origins you trust with `CLIPPULSE_ALLOWED_ORIGINS`.
-- If you expose the app on a LAN or through a reverse proxy, use HTTPS, real user authentication, rate limiting, and have the trusted proxy inject `X-API-Token` on API requests. Do **not** put a shared token in a `VITE_*` variable or frontend bundle.
-- The development server binds to `127.0.0.1` by default. Set `VITE_DEV_HOST=0.0.0.0` only when you intentionally need LAN access and have secured the backend/proxy.
+- If you expose the app on a LAN or through a reverse proxy, use HTTPS, real user authentication, rate limiting, and have the trusted proxy inject `X-API-Token` on both API and `/media/` requests. Do **not** put a shared token in a `VITE_*` variable or frontend bundle.
+- The development server binds to `127.0.0.1` by default. Set `VITE_DEV_HOST=0.0.0.0` and explicitly list the device hostname/IP in `VITE_ALLOWED_HOSTS` only when you intentionally need LAN access and have secured the backend/proxy.
 - YouTube cookies are sensitive session credentials; store only your own cookies and keep the data directory private.
 
 ### Environment Variables (Optional)
