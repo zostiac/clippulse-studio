@@ -263,8 +263,8 @@ class DemoRequest(BaseModel):
 
 
 class YouTubeRequest(BaseModel):
-    url: str
-    fallback_transcript: Optional[str] = None
+    url: str = Field(min_length=1, max_length=2048)
+    fallback_transcript: Optional[str] = Field(default=None, max_length=5_000_000)
 
 
 class CookiesRequest(BaseModel):
@@ -284,21 +284,21 @@ class SettingsUpdate(BaseModel):
 
 
 class CreateClipRequest(BaseModel):
-    title: str = "Custom Viral Clip"
-    start: float
-    end: float
+    title: str = Field(default="Custom Viral Clip", max_length=300)
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
 
 
 class UpdateClipRequest(BaseModel):
-    title: Optional[str] = None
-    start: Optional[float] = None
-    end: Optional[float] = None
+    title: Optional[str] = Field(default=None, max_length=300)
+    start: Optional[float] = Field(default=None, ge=0)
+    end: Optional[float] = Field(default=None, ge=0)
     style: Optional[ClipStyle] = None
     platform_meta: Optional[PlatformMeta] = None
 
 
 class UpdateTranscriptRequest(BaseModel):
-    segments: List[TranscriptSegment] = Field(max_length=20_000)
+    segments: List[TranscriptSegment] = Field(max_length=1_000)
 
 
 # ---------------------------------------------------------------------------
@@ -685,6 +685,8 @@ def api_reanalyze(project_id: str):
     proj = load_project(project_id)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
+    if any(item.export_status == "rendering" for item in proj.clips):
+        raise HTTPException(status_code=409, detail="Wait for active exports to finish before reanalyzing this project.")
     settings = load_settings()
     try:
         proj = _run_analysis(proj, settings)
@@ -698,6 +700,8 @@ def api_update_transcript(project_id: str, payload: UpdateTranscriptRequest):
     proj = load_project(project_id)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
+    if any(item.export_status == "rendering" for item in proj.clips):
+        raise HTTPException(status_code=409, detail="Wait for active exports to finish before editing the transcript.")
     from ingest import distribute_words
     updated: List[TranscriptSegment] = []
     for seg in payload.segments:
