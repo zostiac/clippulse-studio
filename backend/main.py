@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hmac
 import io
+import ipaddress
+import logging
 import mimetypes
 import os
 import shutil
@@ -11,12 +14,13 @@ import uuid
 import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from analyzer import analyze_project, detect_clips_heuristic
 from exporter import export_clip_mp4
@@ -59,16 +63,55 @@ from models import (
     _store_lock,
 )
 
-app = FastAPI(title="ClipPulse Studio API", version="1.0.0")
+app = FastAPI(title="ClipPulse Studio API", version="1.2.0")
+logger = logging.getLogger("clippulse")
+API_TOKEN = os.getenv("CLIPPULSE_API_TOKEN", "").strip()
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CLIPPULSE_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000",
+    ).split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    # Wildcard origins cannot be combined with credentials; the app is token-free/local.
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Token"],
 )
+
+
+@app.middleware("http")
+async def protect_api(request: Request, call_next):
+    if request.url.path.startswith("/api/") and request.url.path != "/api/health" and request.method != "OPTIONS":
+        if API_TOKEN:
+            supplied = request.headers.get("x-api-token", "")
+            if not hmac.compare_digest(supplied, API_TOKEN):
+                return JSONResponse(status_code=401, content={"detail": "Valid API token required."})
+        else:
+            host = request.client.host if request.client else ""
+            try:
+                local_request = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                local_request = False
+            if not local_request:
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "Remote API access is disabled. Configure CLIPPULSE_API_TOKEN first."},
+                )
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    return response
+
+
+_EXPORT_LOCK = threading.Lock()
+_ACTIVE_EXPORTS: set[str] = set()
+
 
 _capability_cache: Dict[str, object] = {}
 
@@ -113,19 +156,27 @@ def _stream_file_range(path: Path, request: Request, download_name: Optional[str
     if not range_header:
         return FileResponse(path, media_type=content_type, headers=headers)
 
-    # Parse Range: bytes=start-end
+    # Support one RFC 9110 byte range, including suffix ranges (bytes=-500).
     try:
         units, rng = range_header.strip().split("=", 1)
-        if units != "bytes":
-            return FileResponse(path, media_type=content_type, headers=headers)
+        if units.lower() != "bytes" or "," in rng or file_size == 0:
+            raise ValueError("Unsupported range")
         start_str, end_str = rng.split("-", 1)
-        start = int(start_str) if start_str else 0
-        end = int(end_str) if end_str else file_size - 1
-        start = max(0, start)
-        end = min(file_size - 1, end)
-        if start > end:
+        if not start_str:
+            suffix_length = int(end_str)
+            if suffix_length <= 0:
+                raise ValueError("Invalid suffix range")
+            start = max(0, file_size - suffix_length)
+            end = file_size - 1
+        else:
+            start = int(start_str)
+            end = int(end_str) if end_str else file_size - 1
+            if start >= file_size:
+                raise ValueError("Range starts beyond end of file")
+            end = min(end, file_size - 1)
+        if start < 0 or start > end:
             raise ValueError("Invalid range")
-    except Exception:
+    except (TypeError, ValueError):
         return Response(status_code=416, headers={"Content-Range": f"bytes */{file_size}"})
 
     chunk_len = end - start + 1
@@ -217,13 +268,13 @@ class YouTubeRequest(BaseModel):
 
 
 class CookiesRequest(BaseModel):
-    cookies_text: str
+    cookies_text: str = Field(max_length=1_000_000)
 
 
 class SettingsUpdate(BaseModel):
     ai_provider: Optional[str] = None
-    api_key: Optional[str] = None
-    ai_model: Optional[str] = None
+    api_key: Optional[str] = Field(default=None, max_length=4096)
+    ai_model: Optional[str] = Field(default=None, max_length=200)
     enable_local_whisper: Optional[bool] = None
     whisper_model: Optional[str] = None
     openai_api_key: Optional[str] = None
@@ -290,7 +341,7 @@ def get_settings():
         "ai_model": s.ai_model,
         "enable_local_whisper": s.enable_local_whisper,
         "whisper_model": s.whisper_model,
-        "has_openai_key": bool(active_key),
+        "has_openai_key": bool(s.openai_api_key),
         "has_youtube_cookies": s.has_youtube_cookies,
         "default_caption_style": s.default_caption_style,
         "default_layout": s.default_layout,
@@ -333,8 +384,15 @@ def _validate_netscape_cookies(text: str) -> bool:
         parts = ln.split("\t")
         if len(parts) != 7:
             return False
-        # domain, flag, path, secure, expiration, name, value
-        if not parts[0] or not parts[5]:
+        domain, include_subdomains, cookie_path, secure, expiry, name, _value = parts
+        domain = domain.removeprefix("#HttpOnly_").lstrip(".").lower()
+        if domain != "youtube.com" and not domain.endswith(".youtube.com"):
+            return False
+        if include_subdomains.upper() not in {"TRUE", "FALSE"}:
+            return False
+        if secure.upper() not in {"TRUE", "FALSE"}:
+            return False
+        if not cookie_path.startswith("/") or not expiry.isdigit() or not name:
             return False
     return True
 
@@ -342,11 +400,15 @@ def _validate_netscape_cookies(text: str) -> bool:
 @app.post("/api/settings/cookies")
 def upload_cookies(payload: CookiesRequest):
     txt = payload.cookies_text.strip()
-    if not txt or "youtube.com" not in txt:
-        raise HTTPException(status_code=400, detail="Please paste valid Netscape-format cookies.txt containing youtube.com cookies.")
+    if not txt or len(txt.encode("utf-8")) > 1_000_000:
+        raise HTTPException(status_code=413, detail="Cookies file must be between 1 byte and 1 MB.")
     if not _validate_netscape_cookies(txt):
         raise HTTPException(status_code=400, detail="Invalid cookies.txt format. Must be Netscape format with 7 tab-separated fields per line.")
     COOKIES_FILE.write_text(txt + "\n", encoding="utf-8")
+    try:
+        COOKIES_FILE.chmod(0o600)
+    except OSError:
+        logger.warning("Could not restrict permissions on the YouTube cookies file")
     return get_settings()
 
 
@@ -372,6 +434,9 @@ def api_get_project(project_id: str):
 
 @app.delete("/api/projects/{project_id}")
 def api_delete_project(project_id: str):
+    with _EXPORT_LOCK:
+        if any(key.startswith(f"{project_id}:") for key in _ACTIVE_EXPORTS):
+            raise HTTPException(status_code=409, detail="Wait for active exports to finish before deleting this project.")
     if not delete_project(project_id):
         raise HTTPException(status_code=404, detail="Project not found")
     return {"deleted": True}
@@ -424,7 +489,20 @@ def api_create_demo(payload: DemoRequest):
 @app.post("/api/projects/youtube")
 def api_create_youtube(payload: YouTubeRequest):
     url = payload.url.strip()
-    if not url or ("youtube.com" not in url and "youtu.be" not in url):
+    try:
+        parsed = urlsplit(url)
+        valid_host = parsed.hostname in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
+    except ValueError:
+        valid_host = False
+        parsed = None
+    if (
+        not url
+        or parsed is None
+        or parsed.scheme not in {"http", "https"}
+        or not valid_host
+        or parsed.username
+        or parsed.password
+    ):
         raise HTTPException(status_code=400, detail="Please enter a valid YouTube URL.")
 
     proj_id = f"proj_{uuid.uuid4().hex[:8]}"
@@ -447,6 +525,9 @@ def api_create_youtube(payload: YouTubeRequest):
         raise HTTPException(status_code=400, detail=str(exc))
 
     duration, width, height = probe_video(video_path)
+    if payload.fallback_transcript and len(payload.fallback_transcript.encode("utf-8")) > MAX_SUBTITLE_BYTES:
+        shutil.rmtree(pdir, ignore_errors=True)
+        raise HTTPException(status_code=413, detail="Fallback transcript exceeds the configured subtitle size limit.")
     if not transcript and payload.fallback_transcript:
         transcript = parse_plain_transcript(payload.fallback_transcript, duration)
 
@@ -490,9 +571,10 @@ async def api_create_upload(
     proj_id = f"proj_{uuid.uuid4().hex[:8]}"
     pdir = get_project_dir(proj_id)
 
-    ext = Path(file.filename or "video.mp4").suffix.lower() or ".mp4"
+    filename = (file.filename or "").strip()
+    ext = Path(filename).suffix.lower()
     if ext not in {".mp4", ".mov", ".webm", ".mkv", ".m4v"}:
-        ext = ".mp4"
+        raise HTTPException(status_code=415, detail="Unsupported video format. Upload MP4, MOV, WebM, MKV, or M4V.")
     dest_video = pdir / f"source{ext}"
 
     total = 0
@@ -532,13 +614,16 @@ async def api_create_upload(
 
     transcript: List[TranscriptSegment] = []
     if subtitle_file is not None:
-        raw_bytes = await subtitle_file.read()
+        raw_bytes = await subtitle_file.read(MAX_SUBTITLE_BYTES + 1)
         if len(raw_bytes) > MAX_SUBTITLE_BYTES:
             shutil.rmtree(pdir, ignore_errors=True)
             raise HTTPException(status_code=413, detail="Subtitle file is too large.")
         raw_sub = raw_bytes.decode("utf-8", errors="ignore")
         transcript = parse_subtitle_text(raw_sub)
     elif transcript_text and transcript_text.strip():
+        if len(transcript_text.encode("utf-8")) > MAX_SUBTITLE_BYTES:
+            shutil.rmtree(pdir, ignore_errors=True)
+            raise HTTPException(status_code=413, detail="Transcript text exceeds the configured subtitle size limit.")
         raw_t = transcript_text.strip()
         if "-->" in raw_t:
             transcript = parse_subtitle_text(raw_t)
@@ -658,6 +743,8 @@ def api_update_clip(project_id: str, clip_id: str, payload: UpdateClipRequest):
             break
     if not target:
         raise HTTPException(status_code=404, detail="Clip not found")
+    if target.export_status == "rendering":
+        raise HTTPException(status_code=409, detail="Wait for this clip's export to finish before editing it.")
 
     if payload.title is not None:
         target.title = payload.title
@@ -692,30 +779,35 @@ def api_delete_clip(project_id: str, clip_id: str):
 
 
 def _run_export_job(project_id: str, clip_id: str) -> None:
-    # Capture initial project data under lock
-    with _store_lock:
-        proj = load_project(project_id)
-        if not proj:
+    export_key = f"{project_id}:{clip_id}"
+    with _EXPORT_LOCK:
+        if export_key in _ACTIVE_EXPORTS:
             return
-        clip = next((c for c in proj.clips if c.id == clip_id), None)
-        if not clip:
-            return
-        video_path = Path(proj.video_path)
-        src_w = proj.width
-        src_h = proj.height
-        transcript = proj.transcript
-
-    def update_progress(pct: int) -> None:
-        with _store_lock:
-            p = load_project(project_id)
-            if not p:
-                return
-            for c in p.clips:
-                if c.id == clip_id:
-                    c.export_progress = pct
-            save_project(p)
+        _ACTIVE_EXPORTS.add(export_key)
 
     try:
+        with _store_lock:
+            proj = load_project(project_id)
+            if not proj:
+                return
+            clip = next((c for c in proj.clips if c.id == clip_id), None)
+            if not clip:
+                return
+            video_path = Path(proj.video_path)
+            src_w, src_h = proj.width, proj.height
+            transcript = proj.transcript
+
+        def update_progress(pct: int) -> None:
+            with _store_lock:
+                current = load_project(project_id)
+                if not current:
+                    return
+                for item in current.clips:
+                    if item.id == clip_id:
+                        item.export_progress = pct
+                        break
+                save_project(current)
+
         out_path = export_clip_mp4(
             clip=clip,
             video_path=video_path,
@@ -725,65 +817,89 @@ def _run_export_job(project_id: str, clip_id: str) -> None:
             on_progress=update_progress,
         )
         with _store_lock:
-            p = load_project(project_id)
-            if p:
-                for c in p.clips:
-                    if c.id == clip_id:
-                        c.export_status = "done"
-                        c.export_progress = 100
-                        c.export_filename = out_path.name
-                        c.export_url = f"/media/exports/{out_path.name}"
-                        c.export_error = None
-                        c.exported_at = time.time()
-                save_project(p)
+            current = load_project(project_id)
+            if current:
+                for item in current.clips:
+                    if item.id == clip_id:
+                        item.export_status = "done"
+                        item.export_progress = 100
+                        item.export_filename = out_path.name
+                        item.export_url = f"/media/exports/{out_path.name}"
+                        item.export_error = None
+                        item.exported_at = time.time()
+                        break
+                save_project(current)
     except Exception as exc:
+        logger.exception("Export failed for project %s clip %s", project_id, clip_id)
         with _store_lock:
-            p = load_project(project_id)
-            if p:
-                for c in p.clips:
-                    if c.id == clip_id:
-                        c.export_status = "error"
-                        c.export_error = str(exc)
-                save_project(p)
+            current = load_project(project_id)
+            if current:
+                for item in current.clips:
+                    if item.id == clip_id:
+                        item.export_status = "error"
+                        item.export_error = str(exc)
+                        break
+                save_project(current)
+    finally:
+        with _EXPORT_LOCK:
+            _ACTIVE_EXPORTS.discard(export_key)
 
 
 @app.post("/api/projects/{project_id}/clips/{clip_id}/export")
 def api_export_clip(project_id: str, clip_id: str):
-    proj = load_project(project_id)
-    if not proj:
-        raise HTTPException(status_code=404, detail="Project not found")
-    clip = next((c for c in proj.clips if c.id == clip_id), None)
-    if not clip:
-        raise HTTPException(status_code=404, detail="Clip not found")
+    with _store_lock:
+        proj = load_project(project_id)
+        if not proj:
+            raise HTTPException(status_code=404, detail="Project not found")
+        clip = next((item for item in proj.clips if item.id == clip_id), None)
+        if not clip:
+            raise HTTPException(status_code=404, detail="Clip not found")
+        if clip.export_status == "rendering":
+            raise HTTPException(status_code=409, detail="This clip is already being exported.")
+        clip.export_status = "rendering"
+        clip.export_progress = 5
+        clip.export_error = None
+        save_project(proj)
+        response = clip.model_dump()
 
-    clip.export_status = "rendering"
-    clip.export_progress = 5
-    clip.export_error = None
-    save_project(proj)
-
-    t = threading.Thread(target=_run_export_job, args=(project_id, clip_id), daemon=True)
-    t.start()
-    return clip.model_dump()
+    try:
+        threading.Thread(target=_run_export_job, args=(project_id, clip_id), daemon=True).start()
+    except Exception:
+        with _store_lock:
+            current = load_project(project_id)
+            if current:
+                for item in current.clips:
+                    if item.id == clip_id:
+                        item.export_status = "error"
+                        item.export_error = "Could not start the export worker."
+                save_project(current)
+        raise HTTPException(status_code=500, detail="Could not start the export worker.")
+    return response
 
 
 @app.post("/api/projects/{project_id}/export-all")
 def api_export_all(project_id: str):
-    proj = load_project(project_id)
-    if not proj:
-        raise HTTPException(status_code=404, detail="Project not found")
-    for c in proj.clips:
-        if c.export_status != "rendering":
-            c.export_status = "rendering"
-            c.export_progress = 5
-            c.export_error = None
-    save_project(proj)
+    with _store_lock:
+        proj = load_project(project_id)
+        if not proj:
+            raise HTTPException(status_code=404, detail="Project not found")
+        queued_ids = []
+        for item in proj.clips:
+            if item.export_status != "rendering":
+                item.export_status = "rendering"
+                item.export_progress = 5
+                item.export_error = None
+                queued_ids.append(item.id)
+        save_project(proj)
+        response = proj.model_dump()
 
     def run_seq():
-        for c in proj.clips:
-            _run_export_job(project_id, c.id)
+        for queued_id in queued_ids:
+            _run_export_job(project_id, queued_id)
 
-    threading.Thread(target=run_seq, daemon=True).start()
-    return proj.model_dump()
+    if queued_ids:
+        threading.Thread(target=run_seq, daemon=True).start()
+    return response
 
 
 @app.get("/api/projects/{project_id}/download-bundle")
@@ -831,7 +947,7 @@ def serve_project_media(project_id: str, filename: str, request: Request):
     safe_project_id = Path(project_id).name
     safe_filename = Path(filename).name
     safe_path = (PROJECTS_DIR / safe_project_id / safe_filename).resolve()
-    if not str(safe_path).startswith(str(PROJECTS_DIR.resolve())):
+    if not safe_path.is_relative_to(PROJECTS_DIR.resolve()):
         raise HTTPException(status_code=403, detail="Forbidden")
     return _stream_file_range(safe_path, request)
 
@@ -839,7 +955,7 @@ def serve_project_media(project_id: str, filename: str, request: Request):
 @app.get("/media/exports/{filename}")
 def serve_export_media(filename: str, request: Request, download: int = 0):
     safe_path = (EXPORTS_DIR / Path(filename).name).resolve()
-    if not str(safe_path).startswith(str(EXPORTS_DIR.resolve())):
+    if not safe_path.is_relative_to(EXPORTS_DIR.resolve()):
         raise HTTPException(status_code=403, detail="Forbidden")
     return _stream_file_range(safe_path, request, download_name=safe_path.name if download else None)
 
