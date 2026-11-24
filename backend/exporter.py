@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shlex
 import subprocess
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -247,9 +246,11 @@ def export_clip_mp4(
             )
 
     if has_ass:
-        # Use shlex.quote to safely escape the path for filtergraph interpolation
-        safe_ass = shlex.quote(str(ass_path))
-        filter_graph += f";[vbase]ass='{safe_ass}'[vout]"
+        # Escape for FFmpeg's filtergraph parser (not the shell; subprocess uses argv).
+        safe_ass = str(ass_path.resolve()).replace("\\", "\\\\")
+        for char in (":", "'", ",", "[", "]", ";"):
+            safe_ass = safe_ass.replace(char, "\\" + char)
+        filter_graph += f";[vbase]ass=filename='{safe_ass}'[vout]"
     else:
         filter_graph += ";[vbase]null[vout]"
 
