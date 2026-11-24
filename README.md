@@ -18,6 +18,14 @@ AI-powered long-form YouTube & video clipping platform that turns podcasts, keyn
   - Frame-accurate trimming, 1080×1920 or 720×1280 H.264 MP4 rendering with burned-in `.ass` animated captions.
   - Download individual MP4s or a complete **ZIP bundle** with ready-to-copy YouTube Shorts, Instagram Reels, and TikTok titles, descriptions, and hashtags.
 
+## Security and deployment
+
+- The API is intended for local use by default. Remote API requests are rejected unless `CLIPPULSE_API_TOKEN` is configured.
+- Set the same secret in the backend environment as `CLIPPULSE_API_TOKEN` and the frontend build environment as `VITE_CLIPPULSE_API_TOKEN`. Never commit either value.
+- Configure browser origins with `CLIPPULSE_ALLOWED_ORIGINS` (comma-separated exact origins).
+- Video uploads default to a 500 MB cap (`CLIPPULSE_MAX_UPLOAD_BYTES`); subtitle/transcript input defaults to 5 MB (`CLIPPULSE_MAX_SUBTITLE_BYTES`).
+- Do not expose this single-user, file-backed service directly to the public internet. Use HTTPS, a reverse proxy with rate limits, persistent storage, backups, and a proper user/authentication layer for multi-user hosting.
+
 ## Running Locally
 
 ### Prerequisites
