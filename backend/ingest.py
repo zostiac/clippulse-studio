@@ -180,23 +180,20 @@ def _parse_ts(ts: str) -> float:
 
 def distribute_words(text: str, start: float, end: float) -> List[WordTiming]:
     tokens = [w for w in re.split(r"\s+", text.strip()) if w]
-    if not tokens:
+    if not tokens or end <= start:
         return []
-    dur = max(0.2, end - start)
+    # Use the actual cue duration. Padding very short cues to 0.2s can push
+    # later word starts beyond the cue end and create invalid timestamps.
+    dur = end - start
     weights = [max(1, len(re.sub(r"[^\w]", "", w))) for w in tokens]
     total_w = sum(weights)
     words: List[WordTiming] = []
     cursor = start
-    for tok, w in zip(tokens, weights):
-        slice_d = dur * (w / total_w)
-        words.append(
-            WordTiming(
-                word=tok,
-                start=round(cursor, 3),
-                end=round(min(end, cursor + slice_d), 3),
-            )
-        )
-        cursor += slice_d
+    for index, (tok, weight) in enumerate(zip(tokens, weights)):
+        next_cursor = end if index == len(tokens) - 1 else cursor + dur * (weight / total_w)
+        if next_cursor > cursor:
+            words.append(WordTiming(word=tok, start=cursor, end=min(end, next_cursor)))
+        cursor = next_cursor
     return words
 
 
