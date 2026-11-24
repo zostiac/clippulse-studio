@@ -434,6 +434,10 @@ def api_get_project(project_id: str):
 
 @app.delete("/api/projects/{project_id}")
 def api_delete_project(project_id: str):
+    with _store_lock:
+        project = load_project(project_id)
+        if project and any(item.export_status == "rendering" for item in project.clips):
+            raise HTTPException(status_code=409, detail="Wait for active exports to finish before deleting this project.")
     with _EXPORT_LOCK:
         if any(key.startswith(f"{project_id}:") for key in _ACTIVE_EXPORTS):
             raise HTTPException(status_code=409, detail="Wait for active exports to finish before deleting this project.")
@@ -805,12 +809,15 @@ def api_update_clip(project_id: str, clip_id: str, payload: UpdateClipRequest):
 
 @app.delete("/api/projects/{project_id}/clips/{clip_id}")
 def api_delete_clip(project_id: str, clip_id: str):
-    with _EXPORT_LOCK:
-        if f"{project_id}:{clip_id}" in _ACTIVE_EXPORTS:
-            raise HTTPException(status_code=409, detail="Wait for this clip's export to finish before deleting it.")
     proj = load_project(project_id)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
+    target = next((item for item in proj.clips if item.id == clip_id), None)
+    if target and target.export_status == "rendering":
+        raise HTTPException(status_code=409, detail="Wait for this clip's export to finish before deleting it.")
+    with _EXPORT_LOCK:
+        if f"{project_id}:{clip_id}" in _ACTIVE_EXPORTS:
+            raise HTTPException(status_code=409, detail="Wait for this clip's export to finish before deleting it.")
     proj.clips = [c for c in proj.clips if c.id != clip_id]
     save_project(proj)
     return {"deleted": True}
@@ -954,8 +961,8 @@ def api_download_bundle(project_id: str):
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         meta_lines = [f"PROJECT: {proj.title}\n"]
         for idx, c in enumerate(exported, 1):
-            mp4 = EXPORTS_DIR / (c.export_filename or "")
-            if mp4.exists():
+            mp4 = (EXPORTS_DIR / (c.export_filename or "")).resolve()
+            if mp4.is_relative_to(EXPORTS_DIR.resolve()) and mp4.is_file():
                 safe_name = f"{idx:02d}_{c.id}.mp4"
                 zf.write(mp4, arcname=safe_name)
             meta_lines.append(
