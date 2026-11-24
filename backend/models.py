@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -42,17 +42,29 @@ class TranscriptionError(RuntimeError):
 
 
 class WordTiming(BaseModel):
-    word: str
-    start: float
-    end: float
+    word: str = Field(min_length=1, max_length=200)
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _valid_interval(self):
+        if self.end <= self.start:
+            raise ValueError("Word end must be after word start.")
+        return self
 
 
 class TranscriptSegment(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:8])
-    start: float
-    end: float
-    text: str
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+    text: str = Field(max_length=20_000)
     words: List[WordTiming] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _valid_interval(self):
+        if self.end <= self.start:
+            raise ValueError("Transcript segment end must be after start.")
+        return self
 
 
 class ClipStyle(BaseModel):
@@ -94,10 +106,10 @@ class SubScores(BaseModel):
 class Clip(BaseModel):
     id: str = Field(default_factory=lambda: f"clip_{uuid.uuid4().hex[:8]}")
     project_id: str
-    title: str
-    start: float
-    end: float
-    viral_score: int = 85
+    title: str = Field(min_length=1, max_length=300)
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+    viral_score: int = Field(default=85, ge=0, le=100)
     sub_scores: SubScores = Field(default_factory=SubScores)
     reason: str = ""
     style: ClipStyle = Field(default_factory=ClipStyle)
@@ -109,6 +121,12 @@ class Clip(BaseModel):
     export_error: Optional[str] = None
     exported_at: Optional[float] = None
 
+    @model_validator(mode="after")
+    def _valid_interval(self):
+        if self.end - self.start < 1.5:
+            raise ValueError("Clip duration must be at least 1.5 seconds.")
+        return self
+
 
 class Project(BaseModel):
     id: str = Field(default_factory=lambda: f"proj_{uuid.uuid4().hex[:8]}")
@@ -119,9 +137,9 @@ class Project(BaseModel):
     video_path: str = ""
     video_url: str = ""
     thumbnail_url: Optional[str] = None
-    duration: float = 0.0
-    width: int = 1920
-    height: int = 1080
+    duration: float = Field(default=0.0, ge=0)
+    width: int = Field(default=1920, ge=0)
+    height: int = Field(default=1080, ge=0)
     created_at: float = Field(default_factory=time.time)
     status: Literal["ingesting", "analyzing", "ready", "error"] = "ready"
     status_detail: str = ""
