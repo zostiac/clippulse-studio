@@ -80,7 +80,7 @@ app.add_middleware(
 
 @app.middleware("http")
 async def protect_api(request: Request, call_next):
-    if request.url.path.startswith("/api/") and request.url.path != "/api/health":
+    if request.url.path.startswith("/api/") and request.url.path != "/api/health" and request.method != "OPTIONS":
         if API_TOKEN:
             supplied = request.headers.get("x-api-token", "")
             if not hmac.compare_digest(supplied, API_TOKEN):
