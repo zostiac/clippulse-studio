@@ -5,13 +5,13 @@ import { fmtTime } from "../api";
 function distributeWords(text, start, end) {
   const tokens = text.split(/\s+/).filter(Boolean);
   if (!tokens.length) return [];
-  const dur = Math.max(0.2, end - start);
+  const dur = Math.max(0, end - start);
   const step = dur / tokens.length;
-  return tokens.map((tok, idx) => ({
-    word: tok,
-    start: start + idx * step,
-    end: start + (idx + 1) * step,
-  }));
+  return tokens.flatMap((tok, idx) => {
+    const wordStart = start + idx * step;
+    const wordEnd = idx === tokens.length - 1 ? end : start + (idx + 1) * step;
+    return wordEnd > wordStart ? [{ word: tok, start: wordStart, end: wordEnd }] : [];
+  });
 }
 
 export default function TranscriptEditor({
