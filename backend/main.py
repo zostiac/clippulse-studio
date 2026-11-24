@@ -225,6 +225,8 @@ def _link_or_copy(src: Path, dst: Path) -> None:
 def _run_analysis(project: Project, settings: AppSettings) -> Project:
     """Transcribe/score a project, persisting `analyzing` then `ready`/`error`."""
     with _store_lock:
+        if project.status == "analyzing":
+            raise HTTPException(status_code=409, detail="This project is already being analyzed.")
         if any(item.export_status == "rendering" for item in project.clips):
             raise HTTPException(status_code=409, detail="Wait for active exports to finish before analyzing this project.")
         project.status = "analyzing"
@@ -445,7 +447,7 @@ def api_delete_project(project_id: str):
         project = load_project(project_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
-        if project.status == "analyzing" or any(item.export_status == "rendering" for item in project.clips):
+        if project.status in {"ingesting", "analyzing"} or any(item.export_status == "rendering" for item in project.clips):
             raise HTTPException(status_code=409, detail="Wait for analysis and exports to finish before deleting this project.")
         with _EXPORT_LOCK:
             if any(key.startswith(f"{project_id}:") for key in _ACTIVE_EXPORTS):
@@ -461,41 +463,41 @@ def api_create_demo(payload: DemoRequest):
     pdir = get_project_dir(proj_id)
     try:
         demo_video, meta, transcript = ensure_demo_project_assets(payload.demo_key)
+        dest_video = pdir / "source.mp4"
+        # Demo assets are identical across projects: hardlink/symlink instead of copying.
+        _link_or_copy(demo_video, dest_video)
+        duration, width, height = probe_video(dest_video)
+        if duration < 1.5 or width <= 0 or height <= 0:
+            raise ValueError("Demo asset does not contain a valid video stream.")
+        thumb_path = pdir / "thumb.jpg"
+        generate_thumbnail(dest_video, thumb_path, duration)
+        energy = compute_energy_peaks(dest_video)
+
+        project = Project(
+            id=proj_id,
+            title=str(meta.get("title") or "ClipPulse Demo")[:300],
+            source_type="demo",
+            channel_name=meta.get("channel_name"),
+            video_path=str(dest_video),
+            video_url=f"/media/projects/{proj_id}/source.mp4",
+            thumbnail_url=f"/media/projects/{proj_id}/thumb.jpg" if thumb_path.exists() else None,
+            duration=round(duration, 2),
+            width=width,
+            height=height,
+            status="ingesting",
+            transcript=transcript,
+            energy_peaks=energy,
+        )
+        save_project(project)
     except Exception as exc:
         shutil.rmtree(pdir, ignore_errors=True)
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.exception("Demo project preparation failed for project %s", proj_id)
+        raise HTTPException(status_code=500, detail="Could not prepare the demo project.") from exc
 
-    dest_video = pdir / "source.mp4"
-    # Demo assets are identical across projects: hardlink/symlink instead of copying.
-    _link_or_copy(demo_video, dest_video)
-
-    duration, width, height = probe_video(dest_video)
-    thumb_path = pdir / "thumb.jpg"
-    generate_thumbnail(dest_video, thumb_path, duration)
-    energy = compute_energy_peaks(dest_video)
-
-    project = Project(
-        id=proj_id,
-        title=meta["title"],
-        source_type="demo",
-        channel_name=meta["channel_name"],
-        video_path=str(dest_video),
-        video_url=f"/media/projects/{proj_id}/source.mp4",
-        thumbnail_url=f"/media/projects/{proj_id}/thumb.jpg" if thumb_path.exists() else None,
-        duration=round(duration, 2),
-        width=width,
-        height=height,
-        status="analyzing",
-        transcript=transcript,
-        energy_peaks=energy,
-    )
-    save_project(project)
-
-    settings = load_settings()
     try:
-        project = _run_analysis(project, settings)
+        project = _run_analysis(project, load_settings())
     except TranscriptionError as exc:
-        raise HTTPException(status_code=422, detail=f"Transcription failed: {exc}")
+        raise HTTPException(status_code=422, detail=f"Transcription failed: {exc}") from exc
     return project.model_dump()
 
 
@@ -728,7 +730,7 @@ def api_create_clip(project_id: str, payload: CreateClipRequest):
         proj = load_project(project_id)
         if not proj:
             raise HTTPException(status_code=404, detail="Project not found")
-        if proj.status == "analyzing":
+        if proj.status in {"ingesting", "analyzing"}:
             raise HTTPException(status_code=409, detail="Wait for analysis to finish before creating clips.")
         if proj.duration < 1.5:
             raise HTTPException(status_code=400, detail="This source video is too short to create a clip.")
