@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import subprocess
@@ -341,8 +342,8 @@ def ingest_youtube(url: str, project_dir: Path) -> Tuple[Path, dict, List[Transc
         "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best",
         "merge_output_format": "mp4",
         "outtmpl": out_template,
-        "writesubtitles": True,
-        "writeautomaticsub": True,
+        "writesubtitles": False,
+        "writeautomaticsub": False,
         "subtitleslangs": ["en", "en-US", "en-GB"],
         "subtitlesformat": "vtt/srt",
         "quiet": True,
@@ -382,6 +383,33 @@ def ingest_youtube(url: str, project_dir: Path) -> Tuple[Path, dict, List[Transc
     if video_path.stat().st_size > MAX_UPLOAD_BYTES:
         video_path.unlink(missing_ok=True)
         raise RuntimeError("Downloaded YouTube video exceeds the configured upload size limit.")
+
+    # Subtitle delivery is best-effort: YouTube may rate-limit caption requests
+    # independently of the video stream (HTTP 429). Download the video first so a
+    # temporary captions failure cannot discard an otherwise successful ingestion.
+    subtitle_opts = {
+        "skip_download": True,
+        "outtmpl": out_template,
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": ["en", "en-US", "en-GB"],
+        "subtitlesformat": "vtt/srt",
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "socket_timeout": 20,
+        "retries": 1,
+    }
+    if COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10:
+        subtitle_opts["cookiefile"] = str(COOKIES_FILE)
+    try:
+        with yt_dlp.YoutubeDL(subtitle_opts) as subtitle_ydl:
+            subtitle_ydl.extract_info(url, download=True)
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "YouTube subtitles unavailable for %s; continuing without captions: %s",
+            video_id or "video", exc,
+        )
 
     # Parse subtitle file if downloaded
     transcript: List[TranscriptSegment] = []
