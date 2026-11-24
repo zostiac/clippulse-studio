@@ -25,6 +25,7 @@ export default function TranscriptEditor({
   const [segments, setSegments] = useState(project.transcript || []);
   const [dirty, setDirty] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const previousProjectId = useRef(project.id);
 
   useEffect(() => {
@@ -40,6 +41,7 @@ export default function TranscriptEditor({
   }, [project.id, project.transcript, dirty]);
 
   function handleTextChange(idx, val) {
+    setSaveError("");
     setSegments((prev) =>
       prev.map((s, i) => {
         if (i !== idx) return s;
@@ -51,10 +53,15 @@ export default function TranscriptEditor({
   }
 
   async function handleSave() {
-    await onSaveTranscript(segments);
-    setDirty(false);
-    setSavedToast(true);
-    setTimeout(() => setSavedToast(false), 1800);
+    setSaveError("");
+    try {
+      await onSaveTranscript(segments);
+      setDirty(false);
+      setSavedToast(true);
+      setTimeout(() => setSavedToast(false), 1800);
+    } catch (error) {
+      setSaveError(error.message || "Could not save the transcript.");
+    }
   }
 
   return (
@@ -92,6 +99,12 @@ export default function TranscriptEditor({
             </div>
           </div>
         </div>
+      )}
+
+      {saveError && (
+        <p role="alert" className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-200">
+          {saveError}
+        </p>
       )}
 
       {/* Transcript Header */}
