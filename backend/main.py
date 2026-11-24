@@ -660,15 +660,15 @@ async def api_create_upload(
         if not project_saved:
             shutil.rmtree(pdir, ignore_errors=True)
         raise
-    except BaseException:
-        if not project_saved:
-            shutil.rmtree(pdir, ignore_errors=True)
-        raise
     except Exception as exc:
         if not project_saved:
             shutil.rmtree(pdir, ignore_errors=True)
         logger.exception("Video upload processing failed for project %s", proj_id)
         raise HTTPException(status_code=400, detail="Could not process the uploaded video. Verify the file and try again.") from exc
+    except BaseException:
+        if not project_saved:
+            shutil.rmtree(pdir, ignore_errors=True)
+        raise
     finally:
         await file.close()
         if subtitle_file is not None:
