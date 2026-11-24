@@ -32,13 +32,11 @@ function getClipWords(transcript, start, end) {
       if (!tokens.length) continue;
       const s = Math.max(start, seg.start);
       const e = Math.min(end, seg.end);
-      const step = Math.max(0.15, (e - s) / tokens.length);
+      const step = Math.max(0, e - s) / tokens.length;
       tokens.forEach((tok, idx) => {
-        words.push({
-          word: tok,
-          start: s + idx * step,
-          end: s + (idx + 1) * step,
-        });
+        const wordStart = s + idx * step;
+        const wordEnd = idx === tokens.length - 1 ? e : s + (idx + 1) * step;
+        if (wordEnd > wordStart) words.push({ word: tok, start: wordStart, end: wordEnd });
       });
     }
   }
@@ -65,15 +63,20 @@ export default function StudioPreview({
   const [safeZone, setSafeZone] = useState("none"); // none | yt | ig | tt
   const [previewMode, setPreviewMode] = useState("live"); // live | exported
 
-  // Reset to live preview if clip changes or export resets
+  // Return to the live editor when the selected clip or its export changes.
   useEffect(() => {
     setPreviewMode("live");
     setPlaying(false);
-    if (mainVideoRef.current && clip) {
-      mainVideoRef.current.currentTime = clip.start;
-      onTimeUpdate(clip.start);
-    }
-  }, [clip?.id]);
+  }, [clip?.id, clip?.export_status]);
+
+  // The exported MP4 timeline starts at zero; the source timeline starts at
+  // the absolute clip start. Re-seek whenever the preview source is swapped.
+  useEffect(() => {
+    if (!mainVideoRef.current || !clip) return;
+    mainVideoRef.current.currentTime = previewMode === "live" ? clip.start : 0;
+    if (auxVideoRef.current) auxVideoRef.current.currentTime = clip.start;
+    onTimeUpdate(clip.start);
+  }, [clip?.id, clip?.start, previewMode, onTimeUpdate]);
 
   // Expose seek function to parent (for transcript click-to-seek)
   useEffect(() => {
@@ -90,20 +93,25 @@ export default function StudioPreview({
     };
   }, [onSeekRef, previewMode, onTimeUpdate]);
 
-  // 60fps time sync & clip loop enforcement
+  // Sync only while playing, and update React state at a modest cadence.
+  // The previous always-on 60fps loop re-rendered the entire editor while paused.
   useEffect(() => {
-    if (previewMode !== "live") return;
+    if (previewMode !== "live" || !playing) return;
     let rafId;
-    const tick = () => {
-      const v = mainVideoRef.current;
-      if (v && clip) {
-        const t = v.currentTime;
-        onTimeUpdate(t);
-        if (auxVideoRef.current && Math.abs(auxVideoRef.current.currentTime - t) > 0.12) {
-          auxVideoRef.current.currentTime = t;
+    let lastUiUpdate = 0;
+    const tick = (now) => {
+      const video = mainVideoRef.current;
+      if (video && clip && !video.paused) {
+        const time = video.currentTime;
+        if (now - lastUiUpdate >= 66) {
+          onTimeUpdate(time);
+          lastUiUpdate = now;
         }
-        if (loopClip && !v.paused && t >= clip.end) {
-          v.currentTime = clip.start;
+        if (auxVideoRef.current && Math.abs(auxVideoRef.current.currentTime - time) > 0.12) {
+          auxVideoRef.current.currentTime = time;
+        }
+        if (loopClip && time >= clip.end) {
+          video.currentTime = clip.start;
           if (auxVideoRef.current) auxVideoRef.current.currentTime = clip.start;
         }
       }
@@ -111,7 +119,7 @@ export default function StudioPreview({
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [clip?.id, clip?.start, clip?.end, loopClip, previewMode]);
+  }, [clip?.id, clip?.start, clip?.end, loopClip, previewMode, playing, onTimeUpdate]);
 
   function togglePlay() {
     const v = mainVideoRef.current;
@@ -120,17 +128,28 @@ export default function StudioPreview({
       if (previewMode === "live" && clip && (v.currentTime < clip.start || v.currentTime >= clip.end)) {
         v.currentTime = clip.start;
       }
-      v.play().catch(() => {});
+      const playPromise = v.play();
       if (auxVideoRef.current) {
         auxVideoRef.current.currentTime = v.currentTime;
         auxVideoRef.current.play().catch(() => {});
       }
-      setPlaying(true);
+      Promise.resolve(playPromise).then(() => setPlaying(true)).catch(() => setPlaying(false));
     } else {
       v.pause();
       if (auxVideoRef.current) auxVideoRef.current.pause();
       setPlaying(false);
     }
+  }
+
+  function handleLiveEnded() {
+    const video = mainVideoRef.current;
+    if (previewMode === "live" && loopClip && clip && video) {
+      video.currentTime = clip.start;
+      if (auxVideoRef.current) auxVideoRef.current.currentTime = clip.start;
+      video.play().catch(() => setPlaying(false));
+      return;
+    }
+    setPlaying(false);
   }
 
   // Group words into active chunk for live captions
@@ -335,6 +354,7 @@ export default function StudioPreview({
                   src={project.video_url}
                   muted={muted}
                   playsInline
+                  onEnded={handleLiveEnded}
                   className="w-full h-full object-cover"
                   style={{ objectPosition: `${panPct}% center` }}
                 />
@@ -355,6 +375,7 @@ export default function StudioPreview({
                     src={project.video_url}
                     muted={muted}
                     playsInline
+                    onEnded={handleLiveEnded}
                     className="relative z-10 w-full h-full object-contain"
                   />
                 </>
@@ -369,6 +390,7 @@ export default function StudioPreview({
                       src={project.video_url}
                       muted={muted}
                       playsInline
+                      onEnded={handleLiveEnded}
                       className="w-full h-full object-cover object-left"
                     />
                   </div>

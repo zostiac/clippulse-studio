@@ -43,7 +43,7 @@ export default function ClipListSidebar({
   }
 
   return (
-    <aside className="w-full lg:w-[320px] xl:w-[340px] shrink-0 border-r border-white/10 bg-[#0E1017] flex flex-col min-h-0">
+    <aside className="w-full lg:w-[320px] xl:w-[340px] shrink-0 max-h-[34vh] lg:max-h-none min-h-[220px] border-r border-white/10 bg-[#0E1017] flex flex-col min-h-0">
       {/* Header */}
       <div className="p-3.5 border-b border-white/10 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">

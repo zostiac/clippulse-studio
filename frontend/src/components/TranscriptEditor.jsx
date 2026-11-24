@@ -1,17 +1,17 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Save, Check } from "lucide-react";
 import { fmtTime } from "../api";
 
 function distributeWords(text, start, end) {
   const tokens = text.split(/\s+/).filter(Boolean);
   if (!tokens.length) return [];
-  const dur = Math.max(0.2, end - start);
+  const dur = Math.max(0, end - start);
   const step = dur / tokens.length;
-  return tokens.map((tok, idx) => ({
-    word: tok,
-    start: start + idx * step,
-    end: start + (idx + 1) * step,
-  }));
+  return tokens.flatMap((tok, idx) => {
+    const wordStart = start + idx * step;
+    const wordEnd = idx === tokens.length - 1 ? end : start + (idx + 1) * step;
+    return wordEnd > wordStart ? [{ word: tok, start: wordStart, end: wordEnd }] : [];
+  });
 }
 
 export default function TranscriptEditor({
@@ -25,13 +25,23 @@ export default function TranscriptEditor({
   const [segments, setSegments] = useState(project.transcript || []);
   const [dirty, setDirty] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const previousProjectId = useRef(project.id);
 
   useEffect(() => {
-    setSegments(project.transcript || []);
-    setDirty(false);
-  }, [project.id, project.transcript]);
+    // Export polling refreshes the project object frequently. Never discard
+    // unsaved transcript edits just because that refreshed array has a new identity.
+    if (previousProjectId.current !== project.id) {
+      previousProjectId.current = project.id;
+      setSegments(project.transcript || []);
+      setDirty(false);
+      return;
+    }
+    if (!dirty) setSegments(project.transcript || []);
+  }, [project.id, project.transcript, dirty]);
 
   function handleTextChange(idx, val) {
+    setSaveError("");
     setSegments((prev) =>
       prev.map((s, i) => {
         if (i !== idx) return s;
@@ -43,10 +53,15 @@ export default function TranscriptEditor({
   }
 
   async function handleSave() {
-    await onSaveTranscript(segments);
-    setDirty(false);
-    setSavedToast(true);
-    setTimeout(() => setSavedToast(false), 1800);
+    setSaveError("");
+    try {
+      await onSaveTranscript(segments);
+      setDirty(false);
+      setSavedToast(true);
+      setTimeout(() => setSavedToast(false), 1800);
+    } catch (error) {
+      setSaveError(error.message || "Could not save the transcript.");
+    }
   }
 
   return (
@@ -86,6 +101,12 @@ export default function TranscriptEditor({
         </div>
       )}
 
+      {saveError && (
+        <p role="alert" className="rounded-lg border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-200">
+          {saveError}
+        </p>
+      )}
+
       {/* Transcript Header */}
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -94,7 +115,8 @@ export default function TranscriptEditor({
         {(dirty || savedToast) && (
           <button
             onClick={handleSave}
-            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold flex items-center gap-1 transition"
+            disabled={!dirty}
+            className="px-2.5 py-1 rounded-lg disabled:opacity-60 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold flex items-center gap-1 transition"
           >
             {savedToast ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
             <span>{savedToast ? "Saved!" : "Save Captions"}</span>

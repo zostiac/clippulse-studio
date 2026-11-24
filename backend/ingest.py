@@ -11,10 +11,12 @@ import numpy as np
 import yt_dlp
 from youtube_transcript_api import YouTubeTranscriptApi
 
-from ffutil import filter_quote
+from ffutil import FFMPEG_BIN, FFPROBE_BIN, filter_quote
 from models import (
     COOKIES_FILE,
     DEMOS_DIR,
+    MAX_UPLOAD_BYTES,
+    MAX_SUBTITLE_BYTES,
     TranscriptSegment,
     WordTiming,
 )
@@ -92,33 +94,52 @@ def is_supported_video_bytes(head: bytes) -> bool:
 
 def probe_video(video_path: Path) -> Tuple[float, int, int]:
     cmd = [
-        "ffprobe",
+        FFPROBE_BIN,
         "-v",
-        "quiet",
+        "error",
         "-print_format",
         "json",
         "-show_format",
         "-show_streams",
         str(video_path),
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
+    except FileNotFoundError as exc:
+        raise RuntimeError("FFprobe was not found. Install FFmpeg or set CLIPPULSE_FFPROBE_PATH.") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Video probing timed out.") from exc
+
     info = json.loads(res.stdout)
-    duration = float(info.get("format", {}).get("duration", 0.0) or 0.0)
-    width, height = 1920, 1080
-    for s in info.get("streams", []):
-        if s.get("codec_type") == "video":
-            width = int(s.get("width", 1920) or 1920)
-            height = int(s.get("height", 1080) or 1080)
-            if duration <= 0 and s.get("duration"):
-                duration = float(s["duration"])
-            break
+    video_stream = next(
+        (stream for stream in info.get("streams", []) if stream.get("codec_type") == "video"),
+        None,
+    )
+    if video_stream is None:
+        raise ValueError("The file does not contain a video stream.")
+    try:
+        width = int(video_stream.get("width") or 0)
+        height = int(video_stream.get("height") or 0)
+    except (TypeError, ValueError):
+        width, height = 0, 0
+    try:
+        duration = float(info.get("format", {}).get("duration", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        duration = 0.0
+    if duration <= 0:
+        try:
+            duration = float(video_stream.get("duration") or 0.0)
+        except (TypeError, ValueError):
+            duration = 0.0
+    if duration <= 0 or width <= 0 or height <= 0:
+        raise ValueError("The video stream has invalid duration or dimensions.")
     return duration, width, height
 
 
 def generate_thumbnail(video_path: Path, out_path: Path, duration: float) -> None:
     seek = min(3.0, max(0.2, duration * 0.2))
     cmd = [
-        "ffmpeg",
+        FFMPEG_BIN,
         "-y",
         "-ss",
         f"{seek:.2f}",
@@ -132,12 +153,12 @@ def generate_thumbnail(video_path: Path, out_path: Path, duration: float) -> Non
         "3",
         str(out_path),
     ]
-    subprocess.run(cmd, capture_output=True, check=False)
+    subprocess.run(cmd, capture_output=True, check=False, timeout=60)
 
 
 def compute_energy_peaks(video_path: Path, bins: int = 120) -> List[float]:
     cmd = [
-        "ffmpeg",
+        FFMPEG_BIN,
         "-v",
         "quiet",
         "-i",
@@ -150,7 +171,7 @@ def compute_energy_peaks(video_path: Path, bins: int = 120) -> List[float]:
         "s16le",
         "pipe:1",
     ]
-    res = subprocess.run(cmd, capture_output=True, check=False)
+    res = subprocess.run(cmd, capture_output=True, check=False, timeout=300)
     raw = res.stdout
     if not raw or len(raw) < 200:
         return [0.35] * bins
@@ -180,23 +201,20 @@ def _parse_ts(ts: str) -> float:
 
 def distribute_words(text: str, start: float, end: float) -> List[WordTiming]:
     tokens = [w for w in re.split(r"\s+", text.strip()) if w]
-    if not tokens:
+    if not tokens or end <= start:
         return []
-    dur = max(0.2, end - start)
+    # Use the actual cue duration. Padding very short cues to 0.2s can push
+    # later word starts beyond the cue end and create invalid timestamps.
+    dur = end - start
     weights = [max(1, len(re.sub(r"[^\w]", "", w))) for w in tokens]
     total_w = sum(weights)
     words: List[WordTiming] = []
     cursor = start
-    for tok, w in zip(tokens, weights):
-        slice_d = dur * (w / total_w)
-        words.append(
-            WordTiming(
-                word=tok,
-                start=round(cursor, 3),
-                end=round(min(end, cursor + slice_d), 3),
-            )
-        )
-        cursor += slice_d
+    for index, (tok, weight) in enumerate(zip(tokens, weights)):
+        next_cursor = end if index == len(tokens) - 1 else cursor + dur * (weight / total_w)
+        if next_cursor > cursor:
+            words.append(WordTiming(word=tok, start=cursor, end=min(end, next_cursor)))
+        cursor = next_cursor
     return words
 
 
@@ -212,6 +230,8 @@ def parse_subtitle_text(raw: str) -> List[TranscriptSegment]:
     )
 
     for block in blocks:
+        if len(segments) >= 10_000:
+            break
         lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
         if not lines:
             continue
@@ -281,21 +301,24 @@ def parse_plain_transcript(text: str, duration: float) -> List[TranscriptSegment
     sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+|\n+", text.strip()) if s.strip()]
     if not sentences:
         return []
-    total_chars = sum(len(s) for s in sentences)
-    dur = max(duration, len(sentences) * 2.5)
+    # Keep transcript timestamps inside the actual source duration. The old
+    # 1.4-second minimum per sentence pushed long pasted transcripts beyond the video.
+    sentences = sentences[:10_000]
+    total_chars = sum(len(sentence) for sentence in sentences)
+    dur = max(0.001, float(duration))
     cursor = 0.0
     segs: List[TranscriptSegment] = []
-    for sent in sentences:
-        seg_dur = max(1.4, dur * (len(sent) / max(1, total_chars)))
-        end = min(dur, cursor + seg_dur)
-        segs.append(
-            TranscriptSegment(
-                start=round(cursor, 3),
-                end=round(end, 3),
-                text=sent,
-                words=distribute_words(sent, cursor, end),
+    for index, sentence in enumerate(sentences):
+        end = dur if index == len(sentences) - 1 else cursor + dur * (len(sentence) / max(1, total_chars))
+        if end > cursor:
+            segs.append(
+                TranscriptSegment(
+                    start=cursor,
+                    end=end,
+                    text=sentence,
+                    words=distribute_words(sentence, cursor, end),
+                )
             )
-        )
         cursor = end
     return segs
 
@@ -316,6 +339,11 @@ def ingest_youtube(url: str, project_dir: Path) -> Tuple[Path, dict, List[Transc
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        "max_filesize": MAX_UPLOAD_BYTES,
+        "socket_timeout": 20,
+        "retries": 2,
+        "fragment_retries": 2,
+        "concurrent_fragment_downloads": 2,
     }
     if COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10:
         ydl_opts["cookiefile"] = str(COOKIES_FILE)
@@ -342,12 +370,19 @@ def ingest_youtube(url: str, project_dir: Path) -> Tuple[Path, dict, List[Transc
         if not candidates:
             raise RuntimeError("Video downloaded but output file was not found.")
         video_path = candidates[0]
+    if video_path.stat().st_size > MAX_UPLOAD_BYTES:
+        video_path.unlink(missing_ok=True)
+        raise RuntimeError("Downloaded YouTube video exceeds the configured upload size limit.")
 
     # Parse subtitle file if downloaded
     transcript: List[TranscriptSegment] = []
     sub_files = list(project_dir.glob("*.vtt")) + list(project_dir.glob("*.srt"))
     if sub_files:
-        transcript = parse_subtitle_text(sub_files[0].read_text(encoding="utf-8", errors="ignore"))
+        subtitle_path = sub_files[0]
+        if subtitle_path.stat().st_size <= MAX_SUBTITLE_BYTES:
+            transcript = parse_subtitle_text(subtitle_path.read_text(encoding="utf-8-sig", errors="replace"))
+        else:
+            subtitle_path.unlink(missing_ok=True)
 
     if not transcript and video_id:
         try:
@@ -358,6 +393,8 @@ def ingest_youtube(url: str, project_dir: Path) -> Tuple[Path, dict, List[Transc
                     continue
                 st = float(item.start)
                 en = st + float(item.duration)
+                if st < 0 or en <= st:
+                    continue
                 transcript.append(
                     TranscriptSegment(
                         start=round(st, 3),
@@ -368,6 +405,7 @@ def ingest_youtube(url: str, project_dir: Path) -> Tuple[Path, dict, List[Transc
                 )
         except Exception:
             pass
+    transcript = transcript[:10_000]
 
     meta = {
         "title": info.get("title") or oembed.get("title") or "YouTube Video",
@@ -508,7 +546,7 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
         )
 
         cmd = [
-            "ffmpeg",
+            FFMPEG_BIN,
             "-y",
             "-f",
             "lavfi",
@@ -535,7 +573,9 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             str(out_video),
         ]
         try:
-            subprocess.run(cmd, capture_output=True, check=True)
+            subprocess.run(cmd, capture_output=True, check=True, timeout=180)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Demo video generation timed out.") from exc
         except FileNotFoundError as exc:
             raise RuntimeError(
                 "FFmpeg not found on PATH. Install FFmpeg and restart the server."

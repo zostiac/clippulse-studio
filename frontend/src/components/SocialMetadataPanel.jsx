@@ -4,20 +4,34 @@ import { Copy, Check, Youtube, Instagram, Music2 } from "lucide-react";
 export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
   const [platform, setPlatform] = useState("youtube"); // youtube | instagram | tiktok
   const [copiedKey, setCopiedKey] = useState(null);
+  const [copyError, setCopyError] = useState("");
 
   if (!clip) return null;
   const meta = clip.platform_meta || {};
 
-  function copyText(key, text) {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 1500);
+  async function copyText(key, text) {
+    setCopyError("");
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard access is unavailable in this browser context.");
+      }
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 1500);
+    } catch {
+      setCopyError("Could not access the clipboard. Check browser permissions or select the text and copy it manually.");
+    }
   }
 
   const update = (patch) => onUpdateMeta({ ...meta, ...patch });
 
   return (
     <div className="space-y-4">
+      {copyError && (
+        <p role="alert" className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200">
+          {copyError}
+        </p>
+      )}
       {/* Platform Selector */}
       <div className="grid grid-cols-3 gap-1.5 bg-[#0A0B0F] p-1 rounded-xl border border-white/10">
         {[

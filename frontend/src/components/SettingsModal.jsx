@@ -137,8 +137,17 @@ export default function SettingsModal({ open, onClose, settings, onUpdated }) {
   async function handleCookiesFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const text = await file.text();
-    setCookiesText(text);
+    setErr(null);
+    if (file.size > 1_000_000) {
+      setErr("cookies.txt must be 1 MB or smaller.");
+      e.target.value = "";
+      return;
+    }
+    try {
+      setCookiesText(await file.text());
+    } catch {
+      setErr("Could not read that cookies file. Try selecting it again.");
+    }
   }
 
   async function handleClearCookies() {
@@ -156,16 +165,17 @@ export default function SettingsModal({ open, onClose, settings, onUpdated }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl bg-[#12141D] border border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" className="w-full max-w-2xl bg-[#12141D] border border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
         <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-emerald-400" />
-            <h2 className="font-semibold text-white text-base">
+            <h2 id="settings-modal-title" className="font-semibold text-white text-base">
               Free AI Engine & YouTube Settings
             </h2>
           </div>
           <button
             onClick={onClose}
+            aria-label="Close settings"
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10"
           >
             <X className="w-4 h-4" />

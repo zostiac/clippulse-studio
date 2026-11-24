@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 import uuid
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -19,9 +20,18 @@ SETTINGS_FILE = DATA_DIR / "settings.json"
 COOKIES_FILE = DATA_DIR / "youtube_cookies.txt"
 
 # Upload guardrails (override with CLIPPULSE_MAX_UPLOAD_MB / CLIPPULSE_MAX_SUBTITLE_MB)
-MAX_UPLOAD_MB = int(os.environ.get("CLIPPULSE_MAX_UPLOAD_MB", "1024"))
+def _positive_env_int(name: str, default: int, maximum: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(1, min(value, maximum))
+
+
+MAX_UPLOAD_MB = _positive_env_int("CLIPPULSE_MAX_UPLOAD_MB", 1024, 4096)
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
-MAX_SUBTITLE_BYTES = int(os.environ.get("CLIPPULSE_MAX_SUBTITLE_MB", "5")) * 1024 * 1024
+MAX_SUBTITLE_MB = _positive_env_int("CLIPPULSE_MAX_SUBTITLE_MB", 5, 25)
+MAX_SUBTITLE_BYTES = MAX_SUBTITLE_MB * 1024 * 1024
 
 for d in (PROJECTS_DIR, DEMOS_DIR, EXPORTS_DIR):
     d.mkdir(parents=True, exist_ok=True)
@@ -32,26 +42,38 @@ class TranscriptionError(RuntimeError):
 
 
 class WordTiming(BaseModel):
-    word: str
-    start: float
-    end: float
+    word: str = Field(min_length=1, max_length=200)
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _valid_interval(self):
+        if self.end <= self.start:
+            raise ValueError("Word end must be after word start.")
+        return self
 
 
 class TranscriptSegment(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:8])
-    start: float
-    end: float
-    text: str
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+    text: str = Field(max_length=20_000)
     words: List[WordTiming] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _valid_interval(self):
+        if self.end <= self.start:
+            raise ValueError("Transcript segment end must be after start.")
+        return self
 
 
 class ClipStyle(BaseModel):
     layout: Literal["center_crop", "blur_fill", "split_screen"] = "center_crop"
-    pan_x: float = 0.0
+    pan_x: float = Field(default=0.0, ge=-1.0, le=1.0)
     caption_style: Literal["hormozi", "beast", "minimal", "neon", "off"] = "hormozi"
     caption_position: Literal["top", "middle", "bottom"] = "bottom"
-    font_size: int = 58
-    words_per_line: int = 3
+    font_size: int = Field(default=58, ge=24, le=100)
+    words_per_line: int = Field(default=3, ge=1, le=6)
     show_hook_banner: bool = True
     hook_banner_text: str = ""
     # Vertical exports never drop below the 1080x1920 floor.
@@ -84,10 +106,10 @@ class SubScores(BaseModel):
 class Clip(BaseModel):
     id: str = Field(default_factory=lambda: f"clip_{uuid.uuid4().hex[:8]}")
     project_id: str
-    title: str
-    start: float
-    end: float
-    viral_score: int = 85
+    title: str = Field(min_length=1, max_length=300)
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+    viral_score: int = Field(default=85, ge=0, le=100)
     sub_scores: SubScores = Field(default_factory=SubScores)
     reason: str = ""
     style: ClipStyle = Field(default_factory=ClipStyle)
@@ -99,6 +121,12 @@ class Clip(BaseModel):
     export_error: Optional[str] = None
     exported_at: Optional[float] = None
 
+    @model_validator(mode="after")
+    def _valid_interval(self):
+        if self.end - self.start < 1.5:
+            raise ValueError("Clip duration must be at least 1.5 seconds.")
+        return self
+
 
 class Project(BaseModel):
     id: str = Field(default_factory=lambda: f"proj_{uuid.uuid4().hex[:8]}")
@@ -109,9 +137,9 @@ class Project(BaseModel):
     video_path: str = ""
     video_url: str = ""
     thumbnail_url: Optional[str] = None
-    duration: float = 0.0
-    width: int = 1920
-    height: int = 1080
+    duration: float = Field(default=0.0, ge=0)
+    width: int = Field(default=1920, ge=0)
+    height: int = Field(default=1080, ge=0)
     created_at: float = Field(default_factory=time.time)
     status: Literal["ingesting", "analyzing", "ready", "error"] = "ready"
     status_detail: str = ""
@@ -139,11 +167,23 @@ class AppSettings(BaseModel):
     default_layout: Literal["center_crop", "blur_fill", "split_screen"] = "center_crop"
 
 
-_store_lock = threading.Lock()
+# Re-entrant because request/export flows often hold the store lock while
+# calling save_project(), which also acquires it.
+_store_lock = threading.RLock()
+
+
+def _project_path(project_id: str) -> Optional[Path]:
+    if not re.fullmatch(r"proj_[a-f0-9]{8}", str(project_id or "")):
+        return None
+    root = PROJECTS_DIR.resolve()
+    path = (root / project_id).resolve()
+    return path if path.is_relative_to(root) else None
 
 
 def get_project_dir(project_id: str) -> Path:
-    d = PROJECTS_DIR / project_id
+    d = _project_path(project_id)
+    if d is None:
+        raise ValueError("Invalid project ID.")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -158,7 +198,10 @@ def save_project(project: Project) -> None:
 
 
 def load_project(project_id: str) -> Optional[Project]:
-    meta_path = PROJECTS_DIR / project_id / "project.json"
+    project_dir = _project_path(project_id)
+    if project_dir is None:
+        return None
+    meta_path = project_dir / "project.json"
     if not meta_path.exists():
         return None
     try:
@@ -182,8 +225,8 @@ def list_projects() -> List[Project]:
 
 def delete_project(project_id: str) -> bool:
     import shutil
-    pdir = PROJECTS_DIR / project_id
-    if pdir.exists():
+    pdir = _project_path(project_id)
+    if pdir is not None and pdir.exists():
         shutil.rmtree(pdir, ignore_errors=True)
         return True
     return False

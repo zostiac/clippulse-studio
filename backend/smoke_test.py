@@ -1,4 +1,4 @@
-"""Regression smoke tests for the 2026-11-23 fix batch.
+"""Regression smoke tests for the post-merge hardening and frontend reliability batch.
 
 Run from the repo root or this directory after installing requirements:
 
@@ -12,6 +12,7 @@ the /api/health capability report.
 import io
 import os
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -20,7 +21,13 @@ os.environ.setdefault("CLIPPULSE_MAX_UPLOAD_MB", "1")
 
 # --- unit checks -------------------------------------------------------------
 from exporter import RESOLUTION_PRESETS, resolve_output_size  # noqa: E402
-from ingest import is_supported_video_bytes  # noqa: E402
+from ingest import (
+    distribute_words,
+    is_supported_video_bytes,
+    parse_plain_transcript,
+    parse_subtitle_text,
+    probe_video,
+)  # noqa: E402
 from models import AppSettings, ClipStyle, TranscriptionError  # noqa: E402
 
 assert resolve_output_size("1080x1920") == (1080, 1920)
@@ -37,9 +44,18 @@ assert is_supported_video_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 8)
 assert is_supported_video_bytes(b"\x1a\x45\xdf\xa3rest")
 assert not is_supported_video_bytes(b"<html><body>nope")
 assert not is_supported_video_bytes(b"\x89PNG\r\n\x1a\n")
+short_words = distribute_words("one two three", 0.0, 0.1)
+assert len(short_words) == 3
+assert all(word.end > word.start for word in short_words)
+assert short_words[-1].end <= 0.1
+short_subtitle = parse_subtitle_text("1\n00:00:00,000 --> 00:00:00,100\none two three")
+assert len(short_subtitle) == 1
+assert all(word.end > word.start and word.end <= short_subtitle[0].end for word in short_subtitle[0].words)
+pasted = parse_plain_transcript("First sentence. Second sentence.", 1.5)
+assert pasted and pasted[-1].end <= 1.5
 
 # Cross-platform font plumbing and filter escaping for the demo generator.
-from ffutil import filter_quote  # noqa: E402
+from ffutil import FFMPEG_BIN, FFPROBE_BIN, filter_quote  # noqa: E402
 from ingest import FONT_BOLD, FONT_OPT, _resolve_bold_font  # noqa: E402
 
 assert filter_quote("C:\\Windows\\Fonts\\a.ttf") == "'C\\:\\\\Windows\\\\Fonts\\\\a.ttf'"
@@ -58,6 +74,20 @@ print("font/escaping OK ->", FONT_BOLD or "(fontconfig default)")
 from models import Project  # noqa: E402
 
 Project(title="x", source_type="demo", status="analyzing")
+# Storage lock must be re-entrant because export progress updates save while locked.
+from models import _store_lock, get_project_dir, load_project, delete_project, EXPORTS_DIR  # noqa: E402
+
+try:
+    get_project_dir("../outside")
+    raise AssertionError("project path traversal was accepted")
+except ValueError:
+    pass
+assert load_project("../outside") is None
+assert delete_project("../outside") is False
+with _store_lock:
+    with _store_lock:
+        pass
+print("storage path/lock checks OK")
 print("unit checks OK")
 
 # --- transcription failure must surface (H2) --------------------------------
@@ -94,6 +124,12 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 import main  # noqa: E402
 
+# Starlette's TestClient labels its peer "testclient" (older httpx versions
+# do not expose a client= override), so map that synthetic host to loopback.
+from unittest.mock import patch  # noqa: E402
+
+_real_ip_address = main.ipaddress.ip_address
+main.ipaddress.ip_address = lambda host: _real_ip_address("127.0.0.1") if host == "testclient" else _real_ip_address(host)
 client = TestClient(main.app)
 
 r = client.get("/api/health")
@@ -102,11 +138,40 @@ caps = r.json()["capabilities"]
 assert "ffmpeg" in caps and "video_pipeline_ready" in caps
 print("health OK ->", caps)
 
+# API and media are local-only unless a shared token is configured.
+with patch.object(
+    main.ipaddress,
+    "ip_address",
+    side_effect=lambda host: _real_ip_address("203.0.113.10") if host == "testclient" else _real_ip_address(host),
+):
+    remote_client = TestClient(main.app)
+    assert remote_client.get("/api/projects").status_code == 503
+    assert remote_client.get("/media/exports/not-a-real-file.mp4").status_code == 503
+    assert remote_client.get("/api/health").status_code == 200
+print("remote API/media access guard OK")
+
+# Range requests support suffix ranges (used by video seeking).
+range_path = EXPORTS_DIR / "range-smoke.bin"
+try:
+    range_path.write_bytes(b"0123456789")
+    r = client.get("/media/exports/range-smoke.bin", headers={"Range": "bytes=-4"})
+    assert r.status_code == 206 and r.content == b"6789", (r.status_code, r.content)
+    r = client.get("/media/exports/range-smoke.bin", headers={"Range": "bytes=20-"})
+    assert r.status_code == 416, (r.status_code, r.text)
+finally:
+    range_path.unlink(missing_ok=True)
+print("media range handling OK")
+
 # Garbage bytes rejected by container sniff.
 files = {"file": ("evil.mp4", io.BytesIO(b"<html>not a video" * 50), "video/mp4")}
 r = client.post("/api/projects/upload", files=files)
-assert r.status_code == 400 and "Unsupported video format" in r.json()["detail"], r.text
+assert r.status_code == 400 and "Unsupported or empty video" in r.json()["detail"], r.text
 print("upload sniff OK ->", r.json()["detail"])
+
+# Hostname validation must reject lookalike domains before yt-dlp is called.
+r = client.post("/api/projects/youtube", json={"url": "https://youtube.com.evil.example/watch?v=abcdefghijk"})
+assert r.status_code == 400, (r.status_code, r.text)
+print("YouTube hostname validation OK")
 
 # Oversized upload rejected (limit 1 MB via env).
 files = {
@@ -124,7 +189,7 @@ print("upload cap OK ->", r.json()["detail"])
 import shutil as _shutil  # noqa: E402
 import subprocess as _subprocess  # noqa: E402
 
-if _shutil.which("ffmpeg") and _shutil.which("ffprobe"):
+if _shutil.which(FFMPEG_BIN) and _shutil.which(FFPROBE_BIN):
     import tempfile
 
     from analyzer import _extract_audio
@@ -132,16 +197,87 @@ if _shutil.which("ffmpeg") and _shutil.which("ffprobe"):
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         _subprocess.run(
-            ["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=10:d=1",
+            [FFMPEG_BIN, "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=10:d=1",
              "-c:v", "libx264", "-pix_fmt", "yuv420p", str(td / "noaudio.mp4")],
             check=True, capture_output=True,
         )
+        _subprocess.run(
+            ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+             "-c:a", "aac", str(td / "audio-only.mp4")],
+            check=True, capture_output=True,
+        )
+        try:
+            probe_video(td / "audio-only.mp4")
+            raise AssertionError("audio-only media was accepted as a video")
+        except ValueError as exc:
+            assert "video stream" in str(exc)
         try:
             _extract_audio(td / "noaudio.mp4", ["-f", "wav"], td / "a.wav")
             raise AssertionError("no-audio video did not raise")
         except RuntimeError as exc:
             assert "no audio track" in str(exc), exc
-    print("audio extraction OK (friendly no-audio error)")
+
+        # End-to-end upload with a supplied transcript exercises the ingesting
+        # -> analyzing -> ready state transition without needing an AI provider.
+        valid_video = td / "valid.mp4"
+        _subprocess.run(
+            [FFMPEG_BIN, "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=10:d=2",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", str(valid_video)],
+            check=True, capture_output=True,
+        )
+        with valid_video.open("rb") as video_file:
+            r = client.post(
+                "/api/projects/upload",
+                files={"file": ("valid.mp4", video_file, "video/mp4")},
+                data={"title": "Upload smoke test", "transcript_text": "A short test transcript."},
+            )
+        assert r.status_code == 200, r.text
+        created = r.json()
+        assert created["status"] == "ready", created["status"]
+        assert created["duration"] >= 1.5
+
+        # Exercise trim bounds and a real FFmpeg export, including the worker
+        # status lifecycle and cleanup of a stale render after style changes.
+        project_id = created["id"]
+        clip_response = client.post(
+            f"/api/projects/{project_id}/clips",
+            json={"title": "Export smoke test", "start": 0, "end": 2},
+        )
+        assert clip_response.status_code == 200, clip_response.text
+        clip = clip_response.json()
+        trimmed = client.patch(
+            f"/api/projects/{project_id}/clips/{clip['id']}",
+            json={"start": 1.8},
+        )
+        assert trimmed.status_code == 200, trimmed.text
+        assert trimmed.json()["start"] == 0.5 and trimmed.json()["end"] == 2.0
+
+        export_response = client.post(
+            f"/api/projects/{project_id}/clips/{clip['id']}/export"
+        )
+        assert export_response.status_code == 200, export_response.text
+        deadline = time.monotonic() + 60
+        exported_clip = None
+        while time.monotonic() < deadline:
+            project_state = client.get(f"/api/projects/{project_id}").json()
+            exported_clip = next(item for item in project_state["clips"] if item["id"] == clip["id"])
+            if exported_clip["export_status"] in {"done", "error"}:
+                break
+            time.sleep(0.25)
+        assert exported_clip and exported_clip["export_status"] == "done", exported_clip
+        rendered_file = EXPORTS_DIR / exported_clip["export_filename"]
+        assert rendered_file.is_file() and rendered_file.stat().st_size > 1024
+
+        updated_style = client.patch(
+            f"/api/projects/{project_id}/clips/{clip['id']}",
+            json={"style": {"font_size": 64}},
+        )
+        assert updated_style.status_code == 200, updated_style.text
+        assert updated_style.json()["export_status"] == "idle"
+        assert updated_style.json()["export_filename"] is None
+        assert not rendered_file.exists()
+        assert client.delete(f"/api/projects/{project_id}").status_code == 200
+    print("upload, clip trimming, FFmpeg export, and export invalidation OK")
 else:
     print("audio extraction SKIPPED (ffmpeg not on PATH)")
 

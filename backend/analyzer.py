@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import subprocess
 import threading
@@ -8,6 +9,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import httpx
+
+from ffutil import FFMPEG_BIN, FFPROBE_BIN
 
 from models import (
     AppSettings,
@@ -75,19 +78,21 @@ def _get_local_whisper(model_name: str):
 def _extract_audio(video_path: Path, out_args: List[str], out_path: Path) -> None:
     """Extract mono 16 kHz audio with ffmpeg, with diagnosable errors."""
     probe = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
+        [FFPROBE_BIN, "-v", "error", "-select_streams", "a", "-show_entries",
          "stream=index", "-of", "csv=p=0", str(video_path)],
-        capture_output=True, text=True,
+        capture_output=True, text=True, timeout=30,
     )
     if probe.returncode == 0 and not probe.stdout.strip():
         raise RuntimeError(
             "This video has no audio track, so there is nothing to transcribe. "
             "Upload a .srt/.vtt subtitle file or paste a transcript with the video instead."
         )
-    cmd = ["ffmpeg", "-y", "-i", str(video_path), "-vn", "-ac", "1", "-ar", "16000"]
+    cmd = [FFMPEG_BIN, "-y", "-i", str(video_path), "-vn", "-ac", "1", "-ar", "16000"]
     cmd += out_args + [str(out_path)]
     try:
-        subprocess.run(cmd, capture_output=True, check=True)
+        subprocess.run(cmd, capture_output=True, check=True, timeout=180)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Audio extraction timed out. Try a shorter video or a subtitle file.") from exc
     except FileNotFoundError as exc:
         raise RuntimeError("FFmpeg not found on PATH. Install FFmpeg and restart the server.") from exc
     except subprocess.CalledProcessError as exc:
@@ -299,23 +304,28 @@ def transcribe_with_cloud_whisper(
     raw_words = data.get("words") or []
     raw_segments = data.get("segments") or []
 
-    word_objs = [
-        WordTiming(
-            word=str(w.get("word", "")).strip(),
-            start=round(float(w.get("start", 0.0)), 3),
-            end=round(float(w.get("end", 0.0)), 3),
-        )
-        for w in raw_words
-        if str(w.get("word", "")).strip()
-    ]
+    word_objs: List[WordTiming] = []
+    for item in raw_words:
+        try:
+            word = str(item.get("word", "")).strip()
+            start = float(item.get("start", 0.0))
+            end = float(item.get("end", 0.0))
+            if not word or not math.isfinite(start) or not math.isfinite(end) or end <= start:
+                continue
+            word_objs.append(WordTiming(word=word, start=round(start, 3), end=round(end, 3)))
+        except (AttributeError, TypeError, ValueError):
+            continue
 
     segments: List[TranscriptSegment] = []
     if raw_segments:
         for seg in raw_segments:
-            st = round(float(seg.get("start", 0.0)), 3)
-            en = round(float(seg.get("end", st + 1.0)), 3)
-            txt = str(seg.get("text", "")).strip()
-            if not txt:
+            try:
+                st = round(float(seg.get("start", 0.0)), 3)
+                en = round(float(seg.get("end", st + 1.0)), 3)
+                txt = str(seg.get("text", "")).strip()
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if not txt or not math.isfinite(st) or not math.isfinite(en) or en <= st:
                 continue
             seg_words = [w for w in word_objs if w.start >= st - 0.08 and w.end <= en + 0.12]
             if not seg_words:
