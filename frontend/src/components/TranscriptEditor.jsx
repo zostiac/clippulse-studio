@@ -24,24 +24,36 @@ export default function TranscriptEditor({
 }) {
   const [segments, setSegments] = useState(project.transcript || []);
   const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
   const [saveError, setSaveError] = useState("");
   const previousProjectId = useRef(project.id);
+  const editRevision = useRef(0);
+  const saveRequestId = useRef(0);
+  const savingRef = useRef(false);
 
   useEffect(() => {
     // Export polling refreshes the project object frequently. Never discard
     // unsaved transcript edits just because that refreshed array has a new identity.
     if (previousProjectId.current !== project.id) {
       previousProjectId.current = project.id;
+      editRevision.current += 1;
+      saveRequestId.current += 1;
+      savingRef.current = false;
+      setSaving(false);
       setSegments(project.transcript || []);
       setDirty(false);
+      setSavedToast(false);
+      setSaveError("");
       return;
     }
     if (!dirty) setSegments(project.transcript || []);
   }, [project.id, project.transcript, dirty]);
 
   function handleTextChange(idx, val) {
+    editRevision.current += 1;
     setSaveError("");
+    setSavedToast(false);
     setSegments((prev) =>
       prev.map((s, i) => {
         if (i !== idx) return s;
@@ -53,14 +65,37 @@ export default function TranscriptEditor({
   }
 
   async function handleSave() {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    const requestId = ++saveRequestId.current;
+    const projectId = project.id;
+    const revisionAtSave = editRevision.current;
+    const snapshot = segments;
+    setSaving(true);
     setSaveError("");
+    setSavedToast(false);
+
     try {
-      await onSaveTranscript(segments);
-      setDirty(false);
-      setSavedToast(true);
-      setTimeout(() => setSavedToast(false), 1800);
+      await onSaveTranscript(snapshot);
+      // A user may keep typing while the request is in flight. Only mark the
+      // editor clean when the exact revision that was sent is still visible.
+      if (
+        previousProjectId.current === projectId &&
+        editRevision.current === revisionAtSave
+      ) {
+        setDirty(false);
+        setSavedToast(true);
+      }
     } catch (error) {
-      setSaveError(error.message || "Could not save the transcript.");
+      if (previousProjectId.current === projectId) {
+        setSaveError(error.message || "Could not save the transcript.");
+      }
+    } finally {
+      // Ignore completion from an older project/save after the editor switches.
+      if (saveRequestId.current === requestId) {
+        savingRef.current = false;
+        setSaving(false);
+      }
     }
   }
 
@@ -114,12 +149,13 @@ export default function TranscriptEditor({
         </span>
         {(dirty || savedToast) && (
           <button
+            type="button"
             onClick={handleSave}
-            disabled={!dirty}
+            disabled={!dirty || saving}
             className="px-2.5 py-1 rounded-lg disabled:opacity-60 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold flex items-center gap-1 transition"
           >
-            {savedToast ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
-            <span>{savedToast ? "Saved!" : "Save Captions"}</span>
+            {savedToast && !dirty ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
+            <span>{saving ? "Saving…" : savedToast && !dirty ? "Saved!" : "Save Captions"}</span>
           </button>
         )}
       </div>
