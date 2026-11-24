@@ -24,9 +24,11 @@ from pydantic import BaseModel, Field
 
 from analyzer import analyze_project, detect_clips_heuristic
 from exporter import export_clip_mp4
+from ffutil import FFMPEG_BIN, FFPROBE_BIN
 from ingest import (
     YouTubeBlockedError,
     compute_energy_peaks,
+    extract_youtube_id,
     ensure_demo_project_assets,
     fetch_youtube_oembed,
     generate_thumbnail,
@@ -316,8 +318,8 @@ class UpdateTranscriptRequest(BaseModel):
 
 @app.get("/api/health")
 def health():
-    ffmpeg = _probe_binary_version("ffmpeg")
-    ffprobe = _probe_binary_version("ffprobe")
+    ffmpeg = _probe_binary_version(FFMPEG_BIN)
+    ffprobe = _probe_binary_version(FFPROBE_BIN)
     try:
         import faster_whisper  # noqa: F401
 
@@ -520,8 +522,9 @@ def api_create_youtube(payload: YouTubeRequest):
         or not valid_port
         or parsed.username
         or parsed.password
+        or not extract_youtube_id(url)
     ):
-        raise HTTPException(status_code=400, detail="Please enter a valid YouTube URL.")
+        raise HTTPException(status_code=400, detail="Please enter a valid YouTube video URL.")
     if payload.fallback_transcript and len(payload.fallback_transcript.encode("utf-8")) > MAX_SUBTITLE_BYTES:
         raise HTTPException(status_code=413, detail="Fallback transcript exceeds the configured subtitle size limit.")
 
