@@ -678,45 +678,46 @@ def _run_export_job(project_id: str, clip_id: str) -> None:
             src_h = proj.height
             transcript = proj.transcript
 
-    def update_progress(pct: int) -> None:
-        with _store_lock:
-            p = load_project(project_id)
-            if not p:
-                return
-            for c in p.clips:
-                if c.id == clip_id:
-                    c.export_progress = pct
-            save_project(p)
+        def update_progress(pct: int) -> None:
+            with _store_lock:
+                p = load_project(project_id)
+                if not p:
+                    return
+                for current in p.clips:
+                    if current.id == clip_id:
+                        current.export_progress = pct
+                save_project(p)
 
-    try:
-        out_path = export_clip_mp4(
-            clip=clip,
-            video_path=video_path,
-            src_w=src_w,
-            src_h=src_h,
-            transcript=transcript,
-            on_progress=update_progress,
-        )
-        with _store_lock:
-            p = load_project(project_id)
-            if p:
-                for c in p.clips:
-                    if c.id == clip_id:
-                        c.export_status = "done"
-                        c.export_progress = 100
-                        c.export_filename = out_path.name
-                        c.export_url = f"/media/exports/{out_path.name}"
-                        c.export_error = None
-                save_project(p)
-    except Exception as exc:
-        with _store_lock:
-            p = load_project(project_id)
-            if p:
-                for c in p.clips:
-                    if c.id == clip_id:
-                        c.export_status = "error"
-                        c.export_error = str(exc)
-                save_project(p)
+        try:
+            out_path = export_clip_mp4(
+                clip=clip,
+                video_path=video_path,
+                src_w=src_w,
+                src_h=src_h,
+                transcript=transcript,
+                on_progress=update_progress,
+            )
+            with _store_lock:
+                p = load_project(project_id)
+                if p:
+                    for current in p.clips:
+                        if current.id == clip_id:
+                            current.export_status = "done"
+                            current.export_progress = 100
+                            current.export_filename = out_path.name
+                            current.export_url = f"/media/exports/{out_path.name}"
+                            current.export_error = None
+                    save_project(p)
+        except Exception as exc:
+            logger.exception("Export failed for project %s clip %s", project_id, clip_id)
+            with _store_lock:
+                p = load_project(project_id)
+                if p:
+                    for current in p.clips:
+                        if current.id == clip_id:
+                            current.export_status = "error"
+                            current.export_error = str(exc)
+                    save_project(p)
     finally:
         with _EXPORT_LOCK:
             _ACTIVE_EXPORTS.discard(export_key)
