@@ -492,52 +492,51 @@ def api_create_youtube(payload: YouTubeRequest):
     try:
         parsed = urlsplit(url)
         valid_host = parsed.hostname in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
+        valid_port = parsed.port in (None, 80, 443)
     except ValueError:
-        valid_host = False
         parsed = None
+        valid_host = False
+        valid_port = False
     if (
         not url
         or parsed is None
         or parsed.scheme not in {"http", "https"}
         or not valid_host
+        or not valid_port
         or parsed.username
         or parsed.password
     ):
         raise HTTPException(status_code=400, detail="Please enter a valid YouTube URL.")
+    if payload.fallback_transcript and len(payload.fallback_transcript.encode("utf-8")) > MAX_SUBTITLE_BYTES:
+        raise HTTPException(status_code=413, detail="Fallback transcript exceeds the configured subtitle size limit.")
 
     proj_id = f"proj_{uuid.uuid4().hex[:8]}"
     pdir = get_project_dir(proj_id)
-
     try:
         video_path, meta, transcript = ingest_youtube(url, pdir)
+        duration, width, height = probe_video(video_path)
+        if duration < 1.5 or width <= 0 or height <= 0:
+            raise ValueError("Downloaded video does not contain a valid video stream.")
+        if not transcript and payload.fallback_transcript:
+            transcript = parse_plain_transcript(payload.fallback_transcript, duration)
+
+        thumb_path = pdir / "thumb.jpg"
+        generate_thumbnail(video_path, thumb_path, duration)
+        energy = compute_energy_peaks(video_path)
     except YouTubeBlockedError as exc:
         shutil.rmtree(pdir, ignore_errors=True)
         return JSONResponse(
             status_code=422,
-            content={
-                "code": "YOUTUBE_BOT_BLOCK",
-                "detail": str(exc),
-                "oembed": exc.meta,
-            },
+            content={"code": "YOUTUBE_BOT_BLOCK", "detail": str(exc), "oembed": exc.meta},
         )
     except Exception as exc:
         shutil.rmtree(pdir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail=str(exc))
-
-    duration, width, height = probe_video(video_path)
-    if payload.fallback_transcript and len(payload.fallback_transcript.encode("utf-8")) > MAX_SUBTITLE_BYTES:
-        shutil.rmtree(pdir, ignore_errors=True)
-        raise HTTPException(status_code=413, detail="Fallback transcript exceeds the configured subtitle size limit.")
-    if not transcript and payload.fallback_transcript:
-        transcript = parse_plain_transcript(payload.fallback_transcript, duration)
-
-    thumb_path = pdir / "thumb.jpg"
-    generate_thumbnail(video_path, thumb_path, duration)
-    energy = compute_energy_peaks(video_path)
+        logger.exception("YouTube ingestion failed for project %s", proj_id)
+        raise HTTPException(status_code=400, detail="Could not download or process this YouTube video. Check the URL and try again.") from exc
 
     project = Project(
         id=proj_id,
-        title=meta["title"],
+        title=(meta.get("title") or "YouTube video")[:300],
         source_type="youtube",
         source_url=url,
         channel_name=meta.get("channel_name"),
@@ -553,11 +552,13 @@ def api_create_youtube(payload: YouTubeRequest):
     )
     save_project(project)
 
-    settings = load_settings()
     try:
-        project = _run_analysis(project, settings)
+        project = _run_analysis(project, load_settings())
     except TranscriptionError as exc:
-        raise HTTPException(status_code=422, detail=f"Transcription failed: {exc}")
+        raise HTTPException(status_code=422, detail=f"Transcription failed: {exc}") from exc
+    except Exception as exc:
+        logger.exception("YouTube project analysis failed for project %s", proj_id)
+        raise HTTPException(status_code=500, detail="Video was downloaded, but analysis failed. Open the project to inspect its status.") from exc
     return project.model_dump()
 
 
@@ -779,6 +780,7 @@ def api_update_clip(project_id: str, clip_id: str, payload: UpdateClipRequest):
                 next_end = min(proj.duration, next_start + min_duration)
                 next_start = max(0.0, next_end - min_duration)
             elif payload.end is not None and payload.start is None:
+                next_end = max(min_duration, next_end)
                 next_start = max(0.0, next_end - min_duration)
             else:
                 next_end = min(proj.duration, next_start + min_duration)
