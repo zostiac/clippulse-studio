@@ -13,6 +13,11 @@ captions are not treated as expansion syntax.
 """
 from __future__ import annotations
 
+import os
+
+FFMPEG_BIN = os.environ.get("CLIPPULSE_FFMPEG_PATH", "ffmpeg").strip() or "ffmpeg"
+FFPROBE_BIN = os.environ.get("CLIPPULSE_FFPROBE_PATH", "ffprobe").strip() or "ffprobe"
+
 
 def filter_quote(value: str) -> str:
     """Quote a value (file path, caption text) for a filter option."""
