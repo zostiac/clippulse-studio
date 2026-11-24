@@ -47,7 +47,7 @@ short_words = distribute_words("one two three", 0.0, 0.1)
 assert len(short_words) == 3
 assert all(word.end > word.start for word in short_words)
 assert short_words[-1].end <= 0.1
-short_subtitle = parse_subtitle_text("1\\n00:00:00,000 --> 00:00:00,100\\none two three")
+short_subtitle = parse_subtitle_text("1\n00:00:00,000 --> 00:00:00,100\none two three")
 assert len(short_subtitle) == 1
 assert all(word.end > word.start and word.end <= short_subtitle[0].end for word in short_subtitle[0].words)
 pasted = parse_plain_transcript("First sentence. Second sentence.", 1.5)
