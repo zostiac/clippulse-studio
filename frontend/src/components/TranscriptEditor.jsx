@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Save, Check } from "lucide-react";
 import { fmtTime } from "../api";
 
@@ -25,11 +25,19 @@ export default function TranscriptEditor({
   const [segments, setSegments] = useState(project.transcript || []);
   const [dirty, setDirty] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
+  const previousProjectId = useRef(project.id);
 
   useEffect(() => {
-    setSegments(project.transcript || []);
-    setDirty(false);
-  }, [project.id, project.transcript]);
+    // Export polling refreshes the project object frequently. Never discard
+    // unsaved transcript edits just because that refreshed array has a new identity.
+    if (previousProjectId.current !== project.id) {
+      previousProjectId.current = project.id;
+      setSegments(project.transcript || []);
+      setDirty(false);
+      return;
+    }
+    if (!dirty) setSegments(project.transcript || []);
+  }, [project.id, project.transcript, dirty]);
 
   function handleTextChange(idx, val) {
     setSegments((prev) =>
@@ -94,7 +102,8 @@ export default function TranscriptEditor({
         {(dirty || savedToast) && (
           <button
             onClick={handleSave}
-            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold flex items-center gap-1 transition"
+            disabled={!dirty}
+            className="px-2.5 py-1 rounded-lg disabled:opacity-60 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold flex items-center gap-1 transition"
           >
             {savedToast ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
             <span>{savedToast ? "Saved!" : "Save Captions"}</span>
