@@ -92,6 +92,7 @@ print("storage path/lock checks OK")
 print("unit checks OK")
 
 # A YouTube subtitle HTTP 429 must not fail an otherwise successful video download.
+import ingest as _ingest  # noqa: E402
 from unittest.mock import patch  # noqa: E402
 
 
