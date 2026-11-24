@@ -24,3 +24,8 @@ test("returns no zero-length timings", () => {
 test("normalizes non-string text safely", () => {
   assert.deepEqual(distributeWords(null, 0, 2), []);
 });
+
+test("returns no timings for non-finite or reversed ranges", () => {
+  assert.deepEqual(distributeWords("one", 0, Number.NaN), []);
+  assert.deepEqual(distributeWords("one", 4, 2), []);
+});
