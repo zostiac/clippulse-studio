@@ -122,7 +122,7 @@ class AppSettings(BaseModel):
     default_layout: Literal["center_crop", "blur_fill", "split_screen"] = "center_crop"
 
 
-_store_lock = threading.Lock()
+_store_lock = threading.RLock()
 
 
 def get_project_dir(project_id: str) -> Path:
