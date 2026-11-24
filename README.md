@@ -21,10 +21,10 @@ AI-powered long-form YouTube & video clipping platform that turns podcasts, keyn
 ## Security and deployment
 
 - The API is intended for local use by default. Remote API requests are rejected unless `CLIPPULSE_API_TOKEN` is configured.
-- Set the same secret in the backend environment as `CLIPPULSE_API_TOKEN` and the frontend build environment as `VITE_CLIPPULSE_API_TOKEN`. Never commit either value.
+- Set `CLIPPULSE_API_TOKEN` on the backend to require the `X-API-Token` header from API clients. Never put this token in a frontend build or commit it; browser bundles are public.
 - Configure browser origins with `CLIPPULSE_ALLOWED_ORIGINS` (comma-separated exact origins).
 - Video uploads default to a 500 MB cap (`CLIPPULSE_MAX_UPLOAD_BYTES`); subtitle/transcript input defaults to 5 MB (`CLIPPULSE_MAX_SUBTITLE_BYTES`).
-- Do not expose this single-user, file-backed service directly to the public internet. Use HTTPS, a reverse proxy with rate limits, persistent storage, backups, and a proper user/authentication layer for multi-user hosting.
+- The built-in UI is intended for localhost. For remote browser access, put it behind a reverse proxy that provides real user authentication, HTTPS, and rate limits; do not embed a shared API token in JavaScript. This single-user, file-backed service is not a multi-user hosting platform.
 
 ## Running Locally
 
