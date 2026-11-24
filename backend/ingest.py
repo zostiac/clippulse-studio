@@ -221,6 +221,8 @@ def parse_subtitle_text(raw: str) -> List[TranscriptSegment]:
     )
 
     for block in blocks:
+        if len(segments) >= 10_000:
+            break
         lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
         if not lines:
             continue
