@@ -117,11 +117,20 @@ def probe_video(video_path: Path) -> Tuple[float, int, int]:
     )
     if video_stream is None:
         raise ValueError("The file does not contain a video stream.")
-    width = int(video_stream.get("width") or 0)
-    height = int(video_stream.get("height") or 0)
-    duration = float(info.get("format", {}).get("duration", 0.0) or 0.0)
+    try:
+        width = int(video_stream.get("width") or 0)
+        height = int(video_stream.get("height") or 0)
+    except (TypeError, ValueError):
+        width, height = 0, 0
+    try:
+        duration = float(info.get("format", {}).get("duration", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        duration = 0.0
     if duration <= 0:
-        duration = float(video_stream.get("duration") or 0.0)
+        try:
+            duration = float(video_stream.get("duration") or 0.0)
+        except (TypeError, ValueError):
+            duration = 0.0
     if duration <= 0 or width <= 0 or height <= 0:
         raise ValueError("The video stream has invalid duration or dimensions.")
     return duration, width, height
