@@ -304,19 +304,35 @@ export default function IngestView({
             {tab === "upload" && (
               <form onSubmit={handleUploadSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <label className="cursor-pointer border-2 border-dashed border-white/15 hover:border-cyan-400/50 rounded-xl p-6 flex flex-col items-center justify-center text-center bg-[#0A0B0F]/60 transition">
+                  <label
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "copy";
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const droppedFile = e.dataTransfer.files?.[0];
+                      if (droppedFile) setUploadFile(droppedFile);
+                    }}
+                    className="cursor-pointer border-2 border-dashed border-white/15 hover:border-cyan-400/50 focus-within:border-cyan-400/60 rounded-xl p-6 flex flex-col items-center justify-center text-center bg-[#0A0B0F]/60 transition min-h-44"
+                  >
                     <Upload className="w-8 h-8 text-cyan-400 mb-2" />
-                    <span className="text-sm font-medium text-white">
+                    <span className="text-sm font-medium text-white break-all">
                       {uploadFile ? uploadFile.name : "Drop or select long-form video"}
                     </span>
                     <span className="text-xs text-slate-500 mt-1">
-                      MP4, MOV, WebM, MKV
+                      MP4, MOV, WebM, MKV, M4V
                     </span>
+                    {uploadFile && (
+                      <span className="text-[11px] text-cyan-300 mt-2">
+                        {(uploadFile.size / (1024 * 1024)).toFixed(1)} MB selected
+                      </span>
+                    )}
                     <input
                       type="file"
-                      accept="video/*,.mp4,.mov,.webm,.mkv"
+                      accept="video/*,.mp4,.mov,.webm,.mkv,.m4v"
                       onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                      className="hidden"
+                      className="sr-only"
                     />
                   </label>
 
@@ -449,8 +465,17 @@ export default function IngestView({
               {projects.map((p) => (
                 <div
                   key={p.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onOpenProject(p.id)}
-                  className="group cursor-pointer rounded-xl bg-[#12141D] border border-white/10 hover:border-violet-500/50 overflow-hidden transition flex flex-col"
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onOpenProject(p.id);
+                    }
+                  }}
+                  className="group cursor-pointer rounded-xl bg-[#12141D] border border-white/10 hover:border-violet-500/50 focus-visible:border-violet-400 overflow-hidden transition flex flex-col"
                 >
                   <div className="aspect-video bg-[#0A0B0F] relative overflow-hidden">
                     {p.thumbnail_url ? (
@@ -493,6 +518,7 @@ export default function IngestView({
                         }}
                         className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
                         title="Delete Project"
+                        aria-label={`Delete project ${p.title}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
