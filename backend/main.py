@@ -298,7 +298,7 @@ class UpdateClipRequest(BaseModel):
 
 
 class UpdateTranscriptRequest(BaseModel):
-    segments: List[TranscriptSegment]
+    segments: List[TranscriptSegment] = Field(max_length=20_000)
 
 
 # ---------------------------------------------------------------------------
@@ -708,18 +708,22 @@ def api_create_clip(project_id: str, payload: CreateClipRequest):
     proj = load_project(project_id)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
-    st = max(0.0, min(payload.start, proj.duration - 2.0))
-    en = max(st + 2.0, min(payload.end, proj.duration))
+    if proj.duration < 1.5:
+        raise HTTPException(status_code=400, detail="This source video is too short to create a clip.")
+    min_clip_duration = min(2.0, proj.duration)
+    st = max(0.0, min(float(payload.start), proj.duration - min_clip_duration))
+    en = max(st + min_clip_duration, min(float(payload.end), proj.duration))
+    title = (payload.title or "").strip()[:300] or "Custom Viral Clip"
     settings = load_settings()
 
     snippet_txt = " ".join(
         s.text for s in proj.transcript if s.end >= st and s.start <= en
-    ) or payload.title
-    hook_banner = " ".join(payload.title.split()[:6]).upper()
+    ) or title
+    hook_banner = " ".join(title.split()[:6]).upper()
 
     new_clip = Clip(
         project_id=proj.id,
-        title=payload.title.strip() or "Custom Clip",
+        title=title,
         start=round(st, 2),
         end=round(en, 2),
         viral_score=84,
@@ -731,12 +735,12 @@ def api_create_clip(project_id: str, payload: CreateClipRequest):
             hook_banner_text=hook_banner,
         ),
         platform_meta=PlatformMeta(
-            youtube_title=f"{payload.title[:82]} #shorts",
+            youtube_title=f"{title[:82]} #shorts",
             youtube_description=snippet_txt[:220],
             youtube_tags=["shorts", "viral", "clips"],
             instagram_caption=snippet_txt[:220],
             instagram_hashtags=["#reels", "#viral", "#shorts"],
-            tiktok_caption=payload.title,
+            tiktok_caption=title,
             tiktok_hashtags=["#fyp", "#viral"],
         ),
     )
@@ -761,11 +765,26 @@ def api_update_clip(project_id: str, clip_id: str, payload: UpdateClipRequest):
         raise HTTPException(status_code=409, detail="Wait for this clip's export to finish before editing it.")
 
     if payload.title is not None:
-        target.title = payload.title
-    if payload.start is not None:
-        target.start = round(max(0.0, min(payload.start, proj.duration - 1.5)), 2)
-    if payload.end is not None:
-        target.end = round(max(target.start + 1.5, min(payload.end, proj.duration)), 2)
+        target.title = payload.title.strip()[:300] or target.title
+    if payload.start is not None or payload.end is not None:
+        if proj.duration < 1.5:
+            raise HTTPException(status_code=400, detail="This source video is too short to trim.")
+        min_duration = min(1.5, proj.duration)
+        next_start = target.start if payload.start is None else float(payload.start)
+        next_end = target.end if payload.end is None else float(payload.end)
+        next_start = max(0.0, min(next_start, proj.duration - min_duration))
+        next_end = max(0.0, min(next_end, proj.duration))
+        if next_end - next_start < min_duration:
+            if payload.start is not None and payload.end is None:
+                next_end = min(proj.duration, next_start + min_duration)
+                next_start = max(0.0, next_end - min_duration)
+            elif payload.end is not None and payload.start is None:
+                next_start = max(0.0, next_end - min_duration)
+            else:
+                next_end = min(proj.duration, next_start + min_duration)
+                next_start = max(0.0, next_end - min_duration)
+        target.start = round(next_start, 2)
+        target.end = round(next_end, 2)
     if payload.style is not None:
         target.style = payload.style
     if payload.platform_meta is not None:
@@ -784,6 +803,9 @@ def api_update_clip(project_id: str, clip_id: str, payload: UpdateClipRequest):
 
 @app.delete("/api/projects/{project_id}/clips/{clip_id}")
 def api_delete_clip(project_id: str, clip_id: str):
+    with _EXPORT_LOCK:
+        if f"{project_id}:{clip_id}" in _ACTIVE_EXPORTS:
+            raise HTTPException(status_code=409, detail="Wait for this clip's export to finish before deleting it.")
     proj = load_project(project_id)
     if not proj:
         raise HTTPException(status_code=404, detail="Project not found")
