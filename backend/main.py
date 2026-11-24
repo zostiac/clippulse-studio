@@ -577,7 +577,7 @@ def api_create_youtube(payload: YouTubeRequest):
         duration=round(duration, 2),
         width=width,
         height=height,
-        status="analyzing",
+        status="ingesting",
         transcript=transcript,
         energy_peaks=energy,
     )
@@ -587,6 +587,8 @@ def api_create_youtube(payload: YouTubeRequest):
         project = _run_analysis(project, load_settings())
     except TranscriptionError as exc:
         raise HTTPException(status_code=422, detail=f"Transcription failed: {exc}") from exc
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("YouTube project analysis failed for project %s", proj_id)
         raise HTTPException(status_code=500, detail="Video was downloaded, but analysis failed. Open the project to inspect its status.") from exc
@@ -794,7 +796,7 @@ def api_update_clip(project_id: str, clip_id: str, payload: UpdateClipRequest):
         proj = load_project(project_id)
         if not proj:
             raise HTTPException(status_code=404, detail="Project not found")
-        if proj.status == "analyzing":
+        if proj.status in {"ingesting", "analyzing"}:
             raise HTTPException(status_code=409, detail="Wait for analysis to finish before editing clips.")
         target = next((item for item in proj.clips if item.id == clip_id), None)
         if not target:
