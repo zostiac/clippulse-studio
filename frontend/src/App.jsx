@@ -185,7 +185,7 @@ export default function App() {
           if (c.id !== clipId) return c;
           const next = { ...c, ...patch };
           const invalidatesExport = patch.style !== undefined || patch.start !== undefined || patch.end !== undefined;
-          if (invalidatesExport && next.export_status === "done") {
+          if (invalidatesExport && ["done", "error"].includes(next.export_status)) {
             next.export_status = "idle";
             next.export_progress = 0;
             next.export_filename = null;
