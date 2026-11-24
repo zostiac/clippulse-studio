@@ -123,7 +123,13 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 import main  # noqa: E402
 
-client = TestClient(main.app, client=("127.0.0.1", 50000))
+# Starlette's TestClient labels its peer "testclient" (older httpx versions
+# do not expose a client= override), so map that synthetic host to loopback.
+from unittest.mock import patch  # noqa: E402
+
+_real_ip_address = main.ipaddress.ip_address
+main.ipaddress.ip_address = lambda host: _real_ip_address("127.0.0.1") if host == "testclient" else _real_ip_address(host)
+client = TestClient(main.app)
 
 r = client.get("/api/health")
 assert r.status_code == 200, r.text
@@ -132,10 +138,15 @@ assert "ffmpeg" in caps and "video_pipeline_ready" in caps
 print("health OK ->", caps)
 
 # API and media are local-only unless a shared token is configured.
-remote_client = TestClient(main.app, client=("203.0.113.10", 50000))
-assert remote_client.get("/api/projects").status_code == 503
-assert remote_client.get("/media/exports/not-a-real-file.mp4").status_code == 503
-assert remote_client.get("/api/health").status_code == 200
+with patch.object(
+    main.ipaddress,
+    "ip_address",
+    side_effect=lambda host: _real_ip_address("203.0.113.10") if host == "testclient" else _real_ip_address(host),
+):
+    remote_client = TestClient(main.app)
+    assert remote_client.get("/api/projects").status_code == 503
+    assert remote_client.get("/media/exports/not-a-real-file.mp4").status_code == 503
+    assert remote_client.get("/api/health").status_code == 200
 print("remote API/media access guard OK")
 
 # Range requests support suffix ranges (used by video seeking).
