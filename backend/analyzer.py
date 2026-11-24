@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import subprocess
 import threading
@@ -299,23 +300,28 @@ def transcribe_with_cloud_whisper(
     raw_words = data.get("words") or []
     raw_segments = data.get("segments") or []
 
-    word_objs = [
-        WordTiming(
-            word=str(w.get("word", "")).strip(),
-            start=round(float(w.get("start", 0.0)), 3),
-            end=round(float(w.get("end", 0.0)), 3),
-        )
-        for w in raw_words
-        if str(w.get("word", "")).strip()
-    ]
+    word_objs: List[WordTiming] = []
+    for item in raw_words:
+        try:
+            word = str(item.get("word", "")).strip()
+            start = float(item.get("start", 0.0))
+            end = float(item.get("end", 0.0))
+            if not word or not math.isfinite(start) or not math.isfinite(end) or end <= start:
+                continue
+            word_objs.append(WordTiming(word=word, start=round(start, 3), end=round(end, 3)))
+        except (AttributeError, TypeError, ValueError):
+            continue
 
     segments: List[TranscriptSegment] = []
     if raw_segments:
         for seg in raw_segments:
-            st = round(float(seg.get("start", 0.0)), 3)
-            en = round(float(seg.get("end", st + 1.0)), 3)
-            txt = str(seg.get("text", "")).strip()
-            if not txt:
+            try:
+                st = round(float(seg.get("start", 0.0)), 3)
+                en = round(float(seg.get("end", st + 1.0)), 3)
+                txt = str(seg.get("text", "")).strip()
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if not txt or not math.isfinite(st) or not math.isfinite(en) or en <= st:
                 continue
             seg_words = [w for w in word_objs if w.start >= st - 0.08 and w.end <= en + 0.12]
             if not seg_words:
