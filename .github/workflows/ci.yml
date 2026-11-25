@@ -61,3 +61,5 @@ jobs:
         run: python -m compileall -q backend
       - name: Run regression smoke tests
         run: python backend/smoke_test.py
+      - name: Run analysis concurrency regression
+        run: python backend/concurrency_test.py
