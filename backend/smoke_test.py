@@ -98,18 +98,24 @@ def _boom(*_a, **_k):
     raise RuntimeError("provider down")
 
 
+_orig_cloud_whisper = analyzer.transcribe_with_cloud_whisper
+_orig_local_whisper = analyzer.transcribe_with_local_whisper
 analyzer.transcribe_with_cloud_whisper = _boom
 analyzer.transcribe_with_local_whisper = _boom
 
 try:
-    analyzer.analyze_project(
-        "proj_t", "t", __file__, 60.0, [], [],
-        AppSettings(ai_provider="groq", enable_local_whisper=True, api_key="k"),
-    )
-except TranscriptionError as exc:
-    print("H2 OK ->", str(exc)[:120])
-else:
-    raise AssertionError("TranscriptionError not raised")
+    try:
+        analyzer.analyze_project(
+            "proj_t", "t", __file__, 60.0, [], [],
+            AppSettings(ai_provider="groq", enable_local_whisper=True, api_key="k"),
+        )
+    except TranscriptionError as exc:
+        print("H2 OK ->", str(exc)[:120])
+    else:
+        raise AssertionError("TranscriptionError not raised")
+finally:
+    analyzer.transcribe_with_cloud_whisper = _orig_cloud_whisper
+    analyzer.transcribe_with_local_whisper = _orig_local_whisper
 
 # No provider configured at all -> heuristic-only fallback, no exception.
 tr, clips, eng = analyzer.analyze_project(
