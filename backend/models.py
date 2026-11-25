@@ -191,13 +191,29 @@ def get_project_dir(project_id: str) -> Path:
     return d
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Atomically write UTF-8 text, retrying transient Windows file locks."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    tmp_path.write_text(text, encoding="utf-8")
+    try:
+        for attempt in range(8):
+            try:
+                os.replace(tmp_path, path)
+                return
+            except PermissionError:
+                if attempt == 7:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
 def save_project(project: Project) -> None:
     with _store_lock:
         pdir = get_project_dir(project.id)
-        meta_path = pdir / "project.json"
-        tmp_path = pdir / "project.json.tmp"
-        tmp_path.write_text(project.model_dump_json(indent=2), encoding="utf-8")
-        os.replace(tmp_path, meta_path)
+        _atomic_write_text(pdir / "project.json", project.model_dump_json(indent=2))
 
 
 def load_project(project_id: str) -> Optional[Project]:
@@ -205,12 +221,13 @@ def load_project(project_id: str) -> Optional[Project]:
     if project_dir is None:
         return None
     meta_path = project_dir / "project.json"
-    if not meta_path.exists():
-        return None
-    try:
-        return Project.model_validate_json(meta_path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
+    with _store_lock:
+        if not meta_path.exists():
+            return None
+        try:
+            return Project.model_validate_json(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
 
 
 def list_projects() -> List[Project]:
@@ -236,22 +253,23 @@ def delete_project(project_id: str) -> bool:
 
 
 def load_settings() -> AppSettings:
-    if SETTINGS_FILE.exists():
-        try:
-            data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-            s = AppSettings.model_validate(data)
-            if not s.api_key and s.openai_api_key:
-                s.api_key = s.openai_api_key
-                if s.ai_provider == "local_free":
-                    s.ai_provider = "openai"
-            s.has_youtube_cookies = COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10
-            return s
-        except Exception:
-            pass
-    return AppSettings(has_youtube_cookies=COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10)
+    with _store_lock:
+        if SETTINGS_FILE.exists():
+            try:
+                data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+                s = AppSettings.model_validate(data)
+                if not s.api_key and s.openai_api_key:
+                    s.api_key = s.openai_api_key
+                    if s.ai_provider == "local_free":
+                        s.ai_provider = "openai"
+                s.has_youtube_cookies = COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10
+                return s
+            except Exception:
+                pass
+        return AppSettings(has_youtube_cookies=COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10)
 
 
 def save_settings(settings: AppSettings) -> AppSettings:
     with _store_lock:
-        SETTINGS_FILE.write_text(settings.model_dump_json(indent=2), encoding="utf-8")
-    return load_settings()
+        _atomic_write_text(SETTINGS_FILE, settings.model_dump_json(indent=2))
+        return load_settings()

@@ -439,4 +439,27 @@ finally:
     analyzer.detect_clips_with_llm = _orig_llm
 print("hybrid Groq Whisper + Gemini LLM routing OK")
 
+# --- atomic write retries transient Windows PermissionError (WinError 5) ---
+import models as _models  # noqa: E402
+
+with tempfile.TemporaryDirectory() as atomic_td:
+    target_file = Path(atomic_td) / "project.json"
+    replace_calls = {"n": 0}
+    _real_replace = _models.os.replace
+
+    def _flaky_replace(src, dst):
+        replace_calls["n"] += 1
+        if replace_calls["n"] < 3:
+            raise PermissionError("simulated WinError 5")
+        return _real_replace(src, dst)
+
+    _models.os.replace = _flaky_replace
+    try:
+        _models._atomic_write_text(target_file, '{"ok": true}')
+    finally:
+        _models.os.replace = _real_replace
+    assert replace_calls["n"] == 3 and target_file.read_text(encoding="utf-8") == '{"ok": true}'
+    assert not list(Path(atomic_td).glob("*.tmp"))
+print("atomic write WinError 5 retry OK")
+
 print("ALL SMOKE TESTS PASSED")

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, Key, Cookie, CheckCircle2, Trash2, Sparkles, Upload, Cpu } from "lucide-react";
 import { api } from "../api";
 
@@ -59,10 +59,14 @@ export default function SettingsModal({ open, onClose, settings, onUpdated }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   const [err, setErr] = useState(null);
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
-    if (open && settings) {
+    const justOpened = open && !wasOpenRef.current;
+    wasOpenRef.current = open;
+    if (justOpened && settings) {
       setProvider(settings.ai_provider || "local_free");
+      setApiKey("");
       setAiModel(settings.ai_model || "");
       setTranscriptionProvider(settings.transcription_provider || "auto");
       setTranscriptionApiKey("");
