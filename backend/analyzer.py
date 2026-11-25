@@ -331,6 +331,7 @@ def transcribe_with_local_whisper(video_path: Path, model_name: str = "tiny") ->
                         words=words,
                     )
                 )
+            del segs_iter
             del audio
 
         segments.sort(key=lambda item: (item.start, item.end))

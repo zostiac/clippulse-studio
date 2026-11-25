@@ -327,22 +327,34 @@ if _shutil.which(FFMPEG_BIN) and _shutil.which(FFPROBE_BIN):
         assert trimmed.status_code == 200, trimmed.text
         assert trimmed.json()["start"] == 0.5 and trimmed.json()["end"] == 2.0
 
-        export_response = client.post(
-            f"/api/projects/{project_id}/clips/{clip['id']}/export"
-        )
-        assert export_response.status_code == 200, export_response.text
-        deadline = time.monotonic() + 60
-        exported_clip = None
-        while time.monotonic() < deadline:
-            project_state = client.get(f"/api/projects/{project_id}").json()
-            exported_clip = next(item for item in project_state["clips"] if item["id"] == clip["id"])
-            if exported_clip["export_status"] in {"done", "error"}:
-                break
-            time.sleep(0.25)
-        assert exported_clip and exported_clip["export_status"] == "done", exported_clip
-        rendered_file = EXPORTS_DIR / exported_clip["export_filename"]
-        assert rendered_file.is_file() and rendered_file.stat().st_size > 1024
-
+        # Force deterministic face-track keyframes so CI exercises the actual
+        # per-frame FFmpeg crop expression without relying on a real face in testsrc.
+        import exporter as _exporter
+        face_detector = _exporter._detect_face_keyframes
+        _exporter._detect_face_keyframes = lambda *_args: [(0.0, 20.0), (1.5, 200.0)]
+        try:
+            face_style = client.patch(
+                f"/api/projects/{project_id}/clips/{clip['id']}",
+                json={"style": {"reframe_mode": "face_follow"}},
+            )
+            assert face_style.status_code == 200, face_style.text
+            export_response = client.post(
+                f"/api/projects/{project_id}/clips/{clip['id']}/export"
+            )
+            assert export_response.status_code == 200, export_response.text
+            deadline = time.monotonic() + 60
+            exported_clip = None
+            while time.monotonic() < deadline:
+                project_state = client.get(f"/api/projects/{project_id}").json()
+                exported_clip = next(item for item in project_state["clips"] if item["id"] == clip["id"])
+                if exported_clip["export_status"] in {"done", "error"}:
+                    break
+                time.sleep(0.25)
+            assert exported_clip and exported_clip["export_status"] == "done", exported_clip
+            rendered_file = EXPORTS_DIR / exported_clip["export_filename"]
+            assert rendered_file.is_file() and rendered_file.stat().st_size > 1024
+        finally:
+            _exporter._detect_face_keyframes = face_detector
         updated_style = client.patch(
             f"/api/projects/{project_id}/clips/{clip['id']}",
             json={"style": {"font_size": 64}},
@@ -450,7 +462,7 @@ with tempfile.TemporaryDirectory() as caption_td:
     ass_text = ass_path.read_text(encoding="utf-8")
     assert "Impact" in ass_text and "HELLO THERE" in ass_text
     assert ",3," in ass_text  # pill background border style
-    assert "{\\\\c" not in ass_text  # static phrase does not animate/highlight
+    assert ("{" + chr(92) + "c") not in ass_text  # static phrase does not animate/highlight
 assert ClipStyle().caption_animation == "pop"
 assert ClipStyle().reframe_mode == "manual"
 print("caption customization and static phrase ASS output OK")
