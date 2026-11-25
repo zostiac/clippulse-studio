@@ -78,7 +78,7 @@ export default function EditorControls({ clip, onUpdateStyle, onUpdateTitle }) {
           })}
         </div>
 
-        {style.layout === "center_crop" && (
+        {style.layout === "center_crop" && (style.reframe_mode || "manual") === "manual" && (
           <div className="pt-2 space-y-1.5">
             <div className="flex justify-between text-[11px] text-slate-400">
               <span>Horizontal Speaker Focus (Pan)</span>
@@ -114,6 +114,40 @@ export default function EditorControls({ clip, onUpdateStyle, onUpdateTitle }) {
           </div>
         )}
       </div>
+
+      {/* Reframing mode */}
+      {style.layout === "center_crop" && (
+        <div className="space-y-2 rounded-xl border border-white/10 bg-[#0A0B0F] p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            Speaker Reframing
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              ["manual", "Manual Pan"],
+              ["face_follow", "Auto Face Follow"],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => set({ reframe_mode: id })}
+                className={`rounded-lg border px-2 py-2 text-[11px] font-semibold transition ${
+                  (style.reframe_mode || "manual") === id
+                    ? "border-violet-500 bg-violet-500/15 text-white"
+                    : "border-white/10 bg-white/[0.03] text-slate-400 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {(style.reframe_mode || "manual") === "face_follow" && (
+            <p className="text-[10px] leading-relaxed text-slate-500">
+              Uses local face detection during export to keep a visible speaker near the center.
+              No cloud API is used. Review the exported MP4 for the final tracking result.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Caption Presets */}
       <div className="space-y-2.5">
@@ -202,6 +236,75 @@ export default function EditorControls({ clip, onUpdateStyle, onUpdateTitle }) {
                 onChange={(e) => set({ words_per_line: parseInt(e.target.value, 10) })}
                 className="w-full accent-violet-500"
               />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="space-y-1 text-[11px] text-slate-400">
+                Animation
+                <select
+                  value={style.caption_animation || "pop"}
+                  onChange={(e) => set({ caption_animation: e.target.value })}
+                  className="w-full rounded-lg border border-white/10 bg-[#12141D] px-2 py-2 text-xs text-white"
+                >
+                  <option value="pop">Pop highlight</option>
+                  <option value="karaoke">Karaoke highlight</option>
+                  <option value="fade">Soft fade</option>
+                  <option value="none">Static phrase</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-[11px] text-slate-400">
+                Text case
+                <select
+                  value={style.caption_case || "style"}
+                  onChange={(e) => set({ caption_case: e.target.value })}
+                  className="w-full rounded-lg border border-white/10 bg-[#12141D] px-2 py-2 text-xs text-white"
+                >
+                  <option value="style">Preset default</option>
+                  <option value="uppercase">UPPERCASE</option>
+                  <option value="sentence">Sentence case</option>
+                  <option value="lowercase">lowercase</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-[11px] text-slate-400">
+                Highlight color
+                <select
+                  value={style.caption_highlight || "style"}
+                  onChange={(e) => set({ caption_highlight: e.target.value })}
+                  className="w-full rounded-lg border border-white/10 bg-[#12141D] px-2 py-2 text-xs text-white"
+                >
+                  <option value="style">Preset color</option>
+                  <option value="yellow">Yellow</option>
+                  <option value="cyan">Cyan</option>
+                  <option value="violet">Violet</option>
+                  <option value="green">Green</option>
+                  <option value="white">White</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-[11px] text-slate-400">
+                Background
+                <select
+                  value={style.caption_background || "style"}
+                  onChange={(e) => set({ caption_background: e.target.value })}
+                  className="w-full rounded-lg border border-white/10 bg-[#12141D] px-2 py-2 text-xs text-white"
+                >
+                  <option value="style">Preset default</option>
+                  <option value="outline">Outline</option>
+                  <option value="pill">Solid pill</option>
+                  <option value="none">No background</option>
+                </select>
+              </label>
+              <label className="col-span-2 space-y-1 text-[11px] text-slate-400">
+                Font
+                <select
+                  value={style.caption_font || "Arial"}
+                  onChange={(e) => set({ caption_font: e.target.value })}
+                  className="w-full rounded-lg border border-white/10 bg-[#12141D] px-2 py-2 text-xs text-white"
+                >
+                  <option value="Arial">Arial</option>
+                  <option value="Arial Black">Arial Black</option>
+                  <option value="DejaVu Sans">DejaVu Sans</option>
+                  <option value="Impact">Impact</option>
+                </select>
+              </label>
             </div>
           </div>
         )}

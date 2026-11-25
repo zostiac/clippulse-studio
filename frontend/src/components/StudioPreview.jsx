@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { fmtTime } from "../api";
+import { formatCaptionWord, getCaptionBackground, getCaptionHighlight } from "../utils/captionStyle";
 
 function getClipWords(transcript, start, end) {
   const words = [];
@@ -202,67 +203,26 @@ export default function StudioPreview({
   const scaledFontPx = Math.max(13, Math.round((style.font_size || 58) * 0.34));
 
   function renderCaptionWord(w, idx, activeIdx) {
-    const isAct = idx === activeIdx;
-    const isUpper = style.caption_style !== "minimal";
-    const text = isUpper ? w.word.toUpperCase() : w.word;
-
-    if (style.caption_style === "hormozi") {
-      return (
-        <span
-          key={idx}
-          className={`inline-block mx-1 transition-transform duration-75 font-black tracking-tight ${
-            isAct ? "text-yellow-300 scale-110" : "text-white"
-          }`}
-          style={{
-            textShadow:
-              "0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000, 0 -2px 0 #000, 0 4px 10px rgba(0,0,0,0.9)",
-          }}
-        >
-          {text}
-        </span>
-      );
-    }
-    if (style.caption_style === "beast") {
-      return (
-        <span
-          key={idx}
-          className={`inline-block mx-1 transition-transform duration-75 font-black tracking-tight ${
-            isAct ? "text-cyan-300 scale-110" : "text-white"
-          }`}
-          style={{
-            textShadow: "0 3px 12px rgba(0,0,0,0.95), 0 1px 2px rgba(0,0,0,1)",
-          }}
-        >
-          {text}
-        </span>
-      );
-    }
-    if (style.caption_style === "neon") {
-      return (
-        <span
-          key={idx}
-          className={`inline-block mx-1 transition-transform duration-75 font-extrabold ${
-            isAct ? "text-fuchsia-400 scale-110" : "text-white"
-          }`}
-          style={{
-            textShadow: isAct
-              ? "0 0 14px rgba(232,121,249,0.9), 0 2px 6px #000"
-              : "0 2px 6px rgba(0,0,0,0.95)",
-          }}
-        >
-          {text}
-        </span>
-      );
-    }
-    // minimal pill
+    const animation = style.caption_animation || "pop";
+    const isAct = idx === activeIdx && animation !== "none";
+    const background = getCaptionBackground(style);
     return (
       <span
         key={idx}
-        className={`inline-block mx-1 font-semibold ${
-          isAct ? "text-violet-300" : "text-slate-100"
-        }`}
+        className="inline-block mx-1 font-black tracking-tight"
+        style={{
+          color: isAct ? getCaptionHighlight(style) : "#FFFFFF",
+          textShadow: background === "outline"
+            ? "0 2px 0 #000, 2px 0 0 #000, -2px 0 0 #000, 0 -2px 0 #000, 0 4px 10px rgba(0,0,0,0.9)"
+            : "none",
+          transform: isAct && animation === "pop" ? "scale(1.1)" : "scale(1)",
+          opacity: animation === "fade" && !isAct ? 0.82 : 1,
+          transition: "color 90ms ease, transform 90ms ease, opacity 90ms ease",
+          fontFamily: style.caption_font || "Arial",
+          fontWeight: style.caption_style === "minimal" ? 600 : 900,
+        }}
       >
-        {text}
+        {formatCaptionWord(w.word, style)}
       </span>
     );
   }
@@ -422,8 +382,8 @@ export default function StudioPreview({
                 >
                   <div
                     className={`text-center leading-tight px-2 ${
-                      style.caption_style === "minimal"
-                        ? "bg-slate-950/80 backdrop-blur-sm px-3 py-1.5 rounded-xl border border-white/10"
+                      getCaptionBackground(style) === "pill"
+                        ? "bg-slate-950/85 backdrop-blur-sm px-3 py-1.5 rounded-xl border border-white/10"
                         : ""
                     }`}
                     style={{ fontSize: `${scaledFontPx}px` }}

@@ -240,57 +240,104 @@ def _load_pcm_wav_float32(wav_path: Path) -> np.ndarray:
     return np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
 
 
+def _iter_wav_chunks(wav_path: Path, chunk_seconds: int = 60, overlap_seconds: int = 2):
+    """Yield small float32 audio windows with overlap, never loading the full recording."""
+    with wave.open(str(wav_path), "rb") as wf:
+        if wf.getsampwidth() != 2:
+            raise RuntimeError(f"Expected 16-bit PCM WAV, got {wf.getsampwidth() * 8}-bit.")
+        if wf.getnchannels() != 1:
+            raise RuntimeError("Expected mono PCM WAV for local transcription.")
+        sample_rate = wf.getframerate()
+        total_frames = wf.getnframes()
+        chunk_frames = max(sample_rate, chunk_seconds * sample_rate)
+        overlap_frames = min(chunk_frames // 4, max(0, overlap_seconds * sample_rate))
+        step_frames = max(1, chunk_frames - overlap_frames)
+        frame_start = 0
+        while frame_start < total_frames:
+            frame_end = min(total_frames, frame_start + chunk_frames)
+            wf.setpos(frame_start)
+            raw = wf.readframes(frame_end - frame_start)
+            if not raw:
+                break
+            audio = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+            chunk_start = frame_start / sample_rate
+            chunk_end = frame_end / sample_rate
+            keep_start = chunk_start + (overlap_frames / (2 * sample_rate) if frame_start else 0.0)
+            keep_end = chunk_end - (
+                overlap_frames / (2 * sample_rate) if frame_end < total_frames else 0.0
+            )
+            yield chunk_start, keep_start, keep_end, audio
+            if frame_end >= total_frames:
+                break
+            frame_start += step_frames
+
+
 def transcribe_with_local_whisper(video_path: Path, model_name: str = "tiny") -> List[TranscriptSegment]:
+    """Transcribe bounded audio windows to keep RAM use predictable on long videos."""
     wav_path = video_path.parent / "audio_local.wav"
     try:
         _extract_audio(video_path, ["-c:a", "pcm_s16le", "-f", "wav"], wav_path)
-        audio = _load_pcm_wav_float32(wav_path)
         model = _get_local_whisper(model_name or "tiny")
-        try:
-            segs_iter, _ = model.transcribe(
-                audio,
-                word_timestamps=True,
-                vad_filter=True,
-            )
-        except Exception:
-            # VAD (onnxruntime) can be unavailable on some machines; plain
-            # transcription still works without it.
-            segs_iter, _ = model.transcribe(
-                audio,
-                word_timestamps=True,
-            )
         segments: List[TranscriptSegment] = []
-        for s in segs_iter:
-            txt = (s.text or "").strip()
-            if not txt:
-                continue
-            words: List[WordTiming] = []
-            for w in (s.words or []):
-                wt = (w.word or "").strip()
-                if wt:
+        from ingest import distribute_words
+
+        for chunk_start, keep_start, keep_end, audio in _iter_wav_chunks(wav_path):
+            try:
+                segs_iter, _ = model.transcribe(
+                    audio,
+                    word_timestamps=True,
+                    vad_filter=True,
+                )
+            except Exception:
+                # VAD (onnxruntime) can be unavailable on some machines; plain
+                # transcription still works without it.
+                segs_iter, _ = model.transcribe(audio, word_timestamps=True)
+
+            for segment in segs_iter:
+                txt = (segment.text or "").strip()
+                if not txt:
+                    continue
+                source_words = segment.words or distribute_words(
+                    txt, float(segment.start), float(segment.end)
+                )
+                words: List[WordTiming] = []
+                for word in source_words:
+                    token = (word.word or "").strip()
+                    if not token:
+                        continue
+                    absolute_start = chunk_start + float(word.start)
+                    absolute_end = chunk_start + float(word.end)
+                    midpoint = (absolute_start + absolute_end) / 2
+                    # Each overlap is assigned to exactly one chunk, avoiding
+                    # duplicated words at the chunk boundary.
+                    if midpoint < keep_start or midpoint >= keep_end:
+                        continue
+                    if absolute_end <= absolute_start:
+                        continue
                     words.append(
                         WordTiming(
-                            word=wt,
-                            start=round(float(w.start), 3),
-                            end=round(max(float(w.start) + 0.06, float(w.end)), 3),
+                            word=token,
+                            start=round(max(0.0, absolute_start), 3),
+                            end=round(max(absolute_start + 0.06, absolute_end), 3),
                         )
                     )
-            if not words:
-                from ingest import distribute_words
-                words = distribute_words(txt, float(s.start), float(s.end))
-            segments.append(
-                TranscriptSegment(
-                    start=round(float(s.start), 3),
-                    end=round(max(float(s.start) + 0.2, float(s.end)), 3),
-                    text=txt,
-                    words=words,
+                if not words:
+                    continue
+                segments.append(
+                    TranscriptSegment(
+                        start=words[0].start,
+                        end=max(words[-1].end, words[0].start + 0.2),
+                        text=" ".join(word.word for word in words),
+                        words=words,
+                    )
                 )
-            )
+            del audio
+
+        segments.sort(key=lambda item: (item.start, item.end))
         return segments
     finally:
         if wav_path.exists():
             wav_path.unlink(missing_ok=True)
-
 
 def transcribe_with_cloud_whisper(
     video_path: Path, api_key: str, provider: str

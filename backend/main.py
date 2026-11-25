@@ -346,6 +346,12 @@ def health():
         whisper = "available"
     except Exception:
         whisper = "unavailable"
+    try:
+        import cv2  # noqa: F401
+
+        face_follow = "available"
+    except Exception:
+        face_follow = "unavailable"
     return {
         "status": "ok",
         "service": "ClipPulse Studio",
@@ -353,6 +359,7 @@ def health():
             "ffmpeg": ffmpeg,
             "ffprobe": ffprobe,
             "local_whisper": whisper,
+            "local_face_follow": face_follow,
             "video_pipeline_ready": bool(ffmpeg and ffprobe),
         },
     }

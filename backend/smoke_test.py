@@ -29,7 +29,7 @@ from ingest import (
     parse_subtitle_text,
     probe_video,
 )  # noqa: E402
-from models import AppSettings, Clip, ClipStyle, TranscriptSegment, TranscriptionError  # noqa: E402
+from models import AppSettings, Clip, ClipStyle, TranscriptSegment, TranscriptionError, WordTiming  # noqa: E402
 
 assert resolve_output_size("1080x1920") == (1080, 1920)
 assert resolve_output_size("1440x2560") == (1440, 2560)
@@ -394,6 +394,67 @@ with tempfile.TemporaryDirectory() as wav_td:
     assert len(seen_audio) == 1 and isinstance(seen_audio[0], np.ndarray)
     assert seen_audio[0].dtype == np.float32 and len(seen_audio[0]) == 4
 print("local whisper float32 ndarray decoding OK")
+
+# --- bounded-memory local transcription and caption/reframe rendering ---
+from analyzer import _iter_wav_chunks  # noqa: E402
+from exporter import _crop_x_expression, build_ass_subtitles  # noqa: E402
+
+with tempfile.TemporaryDirectory() as chunk_td:
+    chunk_wav = Path(chunk_td) / "long.wav"
+    silence = np.zeros(65 * 16000, dtype="<i2")
+    with wave.open(str(chunk_wav), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(silence.tobytes())
+    chunks = list(_iter_wav_chunks(chunk_wav))
+    assert len(chunks) == 2
+    assert len(chunks[0][3]) == 60 * 16000
+    assert len(chunks[1][3]) == 7 * 16000
+    assert abs(chunks[0][2] - chunks[1][1]) < 1e-6
+    assert chunks[0][2] == 59.0 and chunks[1][1] == 59.0
+print("local Whisper chunking/overlap boundaries OK")
+
+track_expr = _crop_x_expression([(0.0, 20.0), (2.0, 120.0)], 60.0)
+assert "if(lt(t,2.000)" in track_expr and "120.00" in track_expr
+assert _crop_x_expression([], 42.0) == "42.0"
+
+caption_clip = Clip(
+    project_id="proj_1234abcd",
+    title="Caption test",
+    start=0.0,
+    end=2.0,
+    style=ClipStyle(
+        caption_animation="none",
+        caption_case="uppercase",
+        caption_highlight="green",
+        caption_background="pill",
+        caption_font="Impact",
+        show_hook_banner=False,
+    ),
+)
+caption_transcript = [
+    TranscriptSegment(
+        start=0.0,
+        end=2.0,
+        text="hello there",
+        words=[
+            WordTiming(word="hello", start=0.0, end=0.8),
+            WordTiming(word="there", start=0.8, end=1.6),
+        ],
+    )
+]
+with tempfile.TemporaryDirectory() as caption_td:
+    ass_path = Path(caption_td) / "captions.ass"
+    assert build_ass_subtitles(caption_clip, caption_transcript, ass_path, 1080, 1920)
+    ass_text = ass_path.read_text(encoding="utf-8")
+    assert "Impact" in ass_text and "HELLO THERE" in ass_text
+    assert ",3," in ass_text  # pill background border style
+    assert "\\c&H0000D78A" not in ass_text  # static phrase does not animate/highlight
+assert ClipStyle().caption_animation == "pop"
+assert ClipStyle().reframe_mode == "manual"
+print("caption customization and static phrase ASS output OK")
+
 
 # --- hybrid providers: Groq Whisper transcription + Gemini LLM clip detection ---
 hybrid_calls = []
