@@ -125,8 +125,8 @@ def build_ass_subtitles(clip: Clip, transcript: List[TranscriptSegment], out_ass
     highlights = {
         "yellow": "&H0015CCFA",
         "cyan": "&H00EED322",
-        "violet": "&H00F65C8B",
-        "green": "&H0000D78A",
+        "violet": "&H00FA8BA7",
+        "green": "&H0099D334",
         "white": "&H00FFFFFF",
     }
     highlight = highlights.get(style.caption_highlight, pal["highlight"])

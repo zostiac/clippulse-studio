@@ -450,7 +450,7 @@ with tempfile.TemporaryDirectory() as caption_td:
     ass_text = ass_path.read_text(encoding="utf-8")
     assert "Impact" in ass_text and "HELLO THERE" in ass_text
     assert ",3," in ass_text  # pill background border style
-    assert "\\c&H0000D78A" not in ass_text  # static phrase does not animate/highlight
+    assert "{\\\\c" not in ass_text  # static phrase does not animate/highlight
 assert ClipStyle().caption_animation == "pop"
 assert ClipStyle().reframe_mode == "manual"
 print("caption customization and static phrase ASS output OK")
