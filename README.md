@@ -12,7 +12,9 @@ AI-powered long-form YouTube & video clipping platform that turns podcasts, keyn
   - Optional **Free-Tier API** support in Settings for **Groq** (free Whisper Large v3 + Llama 3.3 70B), **Google Gemini** (free AI Studio tier), **OpenRouter** (`:free` models), or OpenAI BYOK.
 - **9:16 Vertical Studio & Safe-Zone Previews**:
   - Layouts: **Smart 9:16 Crop** (with horizontal speaker pan), **Blur-Fill 16:9**, and **Split Screen** (top/bottom dual framing).
-  - Dynamic Word-by-Word Captions: **Hormozi Pop**, **Beast Clean**, **Minimal Pill**, **Neon Creator**, plus 3-second top Hook Banner.
+  - Dynamic Word-by-Word Captions: **Hormozi Pop**, **Beast Clean**, **Minimal Pill**, **Neon Creator**, plus configurable pop/karaoke/fade/static animation, case, highlight color, font, and background.
+  - **Local Face Follow Reframing**: optional OpenCV face detection keeps a visible speaker near the center of the vertical crop during export; manual pan remains available as a fallback. No paid API or cloud processing is required.
+  - **Long-video friendly local transcription**: Whisper audio is decoded and transcribed in overlapping 60-second windows to keep memory use bounded instead of loading the entire recording into RAM.
   - Platform Safe-Zone Overlays for **YouTube Shorts**, **Instagram Reels**, and **TikTok**.
 - **Real FFmpeg + libass MP4 Export**:
   - Frame-accurate trimming, **1080×1920 (Full HD, minimum)** or **1440×2560 (QHD)** H.264 MP4 rendering with burned-in `.ass` animated captions (legacy 720p settings are automatically upgraded to the 1080p floor).
@@ -194,7 +196,7 @@ CLIPPULSE_API_TOKEN=               # Optional shared token (use a long random va
 | Layer | Technology |
 |-------|------------|
 | Backend | FastAPI 0.115, Uvicorn, Pydantic v2 |
-| AI/ML | `faster-whisper` (CPU int8), optional Groq/Gemini/OpenRouter/OpenAI |
+| AI/ML | `faster-whisper` (CPU int8), local OpenCV face detection, optional Groq/Gemini/OpenRouter/OpenAI |
 | Video | FFmpeg 6+ (libx264, libass, lavfi) |
 | Frontend | React 18, Vite 6, Tailwind CSS v4, Lucide Icons |
 | Data | File-based JSON (no database) |
@@ -229,6 +231,8 @@ MIT — Free for personal and commercial use.
 
 ## Roadmap
 - [ ] Batch clip export with progress WebSocket
+- [x] Caption animation, case, color, background, and font controls
+- [x] Local face-follow reframing
 - [ ] Custom font upload for captions
 - [ ] Multi-language whisper support
 - [ ] Direct TikTok/Reels/Shorts publishing (OAuth)

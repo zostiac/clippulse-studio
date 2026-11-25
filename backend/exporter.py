@@ -68,6 +68,17 @@ def _collect_clip_words(transcript: List[TranscriptSegment], start: float, end: 
     return words
 
 
+def _caption_case(text: str, mode: str, preset: str) -> str:
+    selected = mode
+    if selected == "style":
+        selected = "sentence" if preset == "minimal" else "uppercase"
+    if selected == "uppercase":
+        return text.upper()
+    if selected == "lowercase":
+        return text.lower()
+    return text
+
+
 def build_ass_subtitles(clip: Clip, transcript: List[TranscriptSegment], out_ass: Path, out_w: int, out_h: int) -> bool:
     style = clip.style
     if style.caption_style == "off" and not (style.show_hook_banner and style.hook_banner_text.strip()):
@@ -77,61 +88,57 @@ def build_ass_subtitles(clip: Clip, transcript: List[TranscriptSegment], out_ass
     font_size = max(28, int(round(style.font_size * scale)))
     hook_font = max(24, int(round(44 * scale)))
 
-    # Alignment: 8 = top-center, 5 = middle-center, 2 = bottom-center
     if style.caption_position == "top":
-        align = 8
-        margin_v = int(280 * scale)
+        align, margin_v = 8, int(280 * scale)
     elif style.caption_position == "middle":
-        align = 5
-        margin_v = 0
+        align, margin_v = 5, 0
     else:
-        align = 2
-        margin_v = int(320 * scale)
+        align, margin_v = 2, int(320 * scale)
 
-    # Style palettes (ASS uses &HAABBGGRR)
     palettes = {
         "hormozi": {
-            "primary": "&H00FFFFFF",
-            "highlight": "&H0015CCFA",  # #FACC15 yellow
-            "outline_color": "&H00000000",
-            "back_color": "&H99000000",
-            "border_style": 1,
-            "outline": max(3, int(6 * scale)),
+            "primary": "&H00FFFFFF", "highlight": "&H0015CCFA",
+            "outline_color": "&H00000000", "back_color": "&H99000000",
+            "border_style": 1, "outline": max(3, int(6 * scale)),
             "shadow": max(2, int(4 * scale)),
-            "upper": True,
         },
         "beast": {
-            "primary": "&H00FFFFFF",
-            "highlight": "&H00EED322",  # #22D3EE cyan
-            "outline_color": "&H00101010",
-            "back_color": "&HA0000000",
-            "border_style": 1,
-            "outline": max(3, int(6 * scale)),
+            "primary": "&H00FFFFFF", "highlight": "&H00EED322",
+            "outline_color": "&H00101010", "back_color": "&HA0000000",
+            "border_style": 1, "outline": max(3, int(6 * scale)),
             "shadow": max(2, int(4 * scale)),
-            "upper": True,
         },
         "minimal": {
-            "primary": "&H00F8FAFC",
-            "highlight": "&H00FA8BA7",  # #A78BFA violet
-            "outline_color": "&H900B0E17",
-            "back_color": "&H900B0E17",
-            "border_style": 3,
-            "outline": max(4, int(10 * scale)),
+            "primary": "&H00F8FAFC", "highlight": "&H00FA8BA7",
+            "outline_color": "&H900B0E17", "back_color": "&H900B0E17",
+            "border_style": 3, "outline": max(4, int(10 * scale)),
             "shadow": 0,
-            "upper": False,
         },
         "neon": {
-            "primary": "&H00FFFFFF",
-            "highlight": "&H00F65C8B",  # #8B5CF6 violet-pink
-            "outline_color": "&H00260F38",
-            "back_color": "&H80000000",
-            "border_style": 1,
-            "outline": max(3, int(5 * scale)),
+            "primary": "&H00FFFFFF", "highlight": "&H00F65C8B",
+            "outline_color": "&H00260F38", "back_color": "&H80000000",
+            "border_style": 1, "outline": max(3, int(5 * scale)),
             "shadow": max(2, int(4 * scale)),
-            "upper": True,
         },
     }
     pal = palettes.get(style.caption_style, palettes["hormozi"])
+    highlights = {
+        "yellow": "&H0015CCFA",
+        "cyan": "&H00EED322",
+        "violet": "&H00FA8BA7",
+        "green": "&H0099D334",
+        "white": "&H00FFFFFF",
+    }
+    highlight = highlights.get(style.caption_highlight, pal["highlight"])
+    background = style.caption_background
+    if background == "style":
+        background = "pill" if style.caption_style == "minimal" else "outline"
+    border_style = 3 if background == "pill" else 1
+    outline = pal["outline"] if background == "outline" else (max(4, int(10 * scale)) if background == "pill" else 0)
+    shadow = pal["shadow"] if background == "outline" else 0
+    back_color = pal["back_color"] if background != "none" else "&HFF000000"
+    if background == "pill":
+        back_color = "&H990B0E17"
 
     header = f"""[Script Info]
 ScriptType: v4.00+
@@ -142,7 +149,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,Arial,{font_size},{pal['primary']},&H00FFFFFF,{pal['outline_color']},{pal['back_color']},-1,0,0,0,100,100,0,0,{pal['border_style']},{pal['outline']},{pal['shadow']},{align},60,60,{margin_v},1
+Style: Caption,{style.caption_font},{font_size},{pal['primary']},&H00FFFFFF,{pal['outline_color']},{back_color},-1,0,0,0,100,100,0,0,{border_style},{outline},{shadow},{align},60,60,{margin_v},1
 Style: HookBanner,Arial,{hook_font},&H00FFFFFF,&H00FFFFFF,&H005C3B7C,&HCC141829,-1,0,0,0,100,100,0,0,3,{max(6, int(14 * scale))},0,8,70,70,{int(145 * scale)},1
 
 [Events]
@@ -151,7 +158,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     events: List[str] = []
     clip_dur = max(0.5, clip.end - clip.start)
-
     if style.show_hook_banner and style.hook_banner_text.strip():
         banner_end = min(clip_dur, 4.5)
         banner_txt = _esc_ass(style.hook_banner_text.strip())
@@ -162,34 +168,145 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     if style.caption_style != "off":
         words = _collect_clip_words(transcript, clip.start, clip.end)
         chunk_sz = max(1, min(6, style.words_per_line))
+        animation = style.caption_animation
         for i in range(0, len(words), chunk_sz):
             group = words[i : i + chunk_sz]
             if not group:
                 continue
-            for active_idx, w in enumerate(group):
-                ev_s = w.start
-                if active_idx + 1 < len(group):
-                    ev_e = min(clip_dur, max(ev_s + 0.04, group[active_idx + 1].start))
-                else:
-                    ev_e = min(clip_dur, max(ev_s + 0.04, w.end))
-                if ev_e <= ev_s:
+            if animation == "none":
+                phrase = " ".join(
+                    _esc_ass(_caption_case(word.word, style.caption_case, style.caption_style))
+                    for word in group
+                )
+                events.append(
+                    f"Dialogue: 1,{_fmt_ass_time(group[0].start)},{_fmt_ass_time(min(clip_dur, group[-1].end))},Caption,,0,0,0,,{phrase}"
+                )
+                continue
+
+            for active_idx, word in enumerate(group):
+                event_start = word.start
+                event_end = (
+                    min(clip_dur, max(event_start + 0.04, group[active_idx + 1].start))
+                    if active_idx + 1 < len(group)
+                    else min(clip_dur, max(event_start + 0.04, word.end))
+                )
+                if event_end <= event_start:
                     continue
                 parts = []
-                for idx2, gw in enumerate(group):
-                    word_txt = gw.word.upper() if pal["upper"] else gw.word
-                    word_txt = _esc_ass(word_txt)
-                    if idx2 == active_idx:
-                        parts.append(f"{{\\c{pal['highlight']}&\\fscx110\\fscy110}}{word_txt}{{\\rCaption}}")
+                for word_idx, grouped_word in enumerate(group):
+                    text = _esc_ass(
+                        _caption_case(grouped_word.word, style.caption_case, style.caption_style)
+                    )
+                    if word_idx == active_idx:
+                        if animation == "pop":
+                            tag = f"\\c{highlight}&\\fscx110\\fscy110"
+                        elif animation == "fade":
+                            tag = f"\\fad(80,80)\\c{highlight}"
+                        else:
+                            tag = f"\\c{highlight}"
+                        parts.append(f"{{{tag}}}{text}{{\\rCaption}}")
                     else:
-                        parts.append(word_txt)
-                line_text = " ".join(parts)
+                        parts.append(text)
                 events.append(
-                    f"Dialogue: 1,{_fmt_ass_time(ev_s)},{_fmt_ass_time(ev_e)},Caption,,0,0,0,,{line_text}"
+                    f"Dialogue: 1,{_fmt_ass_time(event_start)},{_fmt_ass_time(event_end)},Caption,,0,0,0,,{' '.join(parts)}"
                 )
 
     out_ass.write_text(header + "\n".join(events) + "\n", encoding="utf-8")
     return True
 
+
+def _detect_face_keyframes(
+    video_path: Path,
+    clip_start: float,
+    clip_end: float,
+    src_w: int,
+    crop_w: int,
+) -> List[tuple[float, float]]:
+    """Sample frontal faces locally and return (clip-relative time, crop-x) keyframes."""
+    try:
+        import cv2
+    except ImportError:
+        return []
+
+    capture = cv2.VideoCapture(str(video_path))
+    if not capture.isOpened():
+        capture.release()
+        return []
+    try:
+        cascade_path = str(Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml")
+        detector = cv2.CascadeClassifier(cascade_path)
+        if detector.empty():
+            return []
+        duration = max(0.0, clip_end - clip_start)
+        if duration <= 0 or src_w <= crop_w:
+            return []
+        sample_times = [0.0]
+        current = 1.25
+        while current < duration:
+            sample_times.append(current)
+            current += 1.25
+        if duration > 0.25:
+            sample_times.append(duration)
+
+        keyframes: List[tuple[float, float]] = []
+        previous_center = None
+        for relative_time in sample_times:
+            capture.set(cv2.CAP_PROP_POS_MSEC, (clip_start + relative_time) * 1000.0)
+            ok, frame = capture.read()
+            if not ok or frame is None:
+                continue
+            frame_h, frame_w = frame.shape[:2]
+            factor = min(1.0, 640.0 / max(1, frame_w))
+            if factor < 1.0:
+                frame = cv2.resize(frame, (max(1, int(frame_w * factor)), max(1, int(frame_h * factor))))
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = detector.detectMultiScale(
+                gray, scaleFactor=1.1, minNeighbors=5, minSize=(28, 28)
+            )
+            if len(faces) == 0:
+                continue
+            def score(box):
+                x, _y, width, _height = box
+                center = (x + width / 2.0) / factor
+                area = width * _height
+                return (abs(center - previous_center) - area * 0.001) if previous_center is not None else -area
+            x, _y, width, _height = min(faces, key=score)
+            center_x = (x + width / 2.0) / factor
+            previous_center = center_x
+            crop_x = max(0.0, min(float(src_w - crop_w), center_x - crop_w / 2.0))
+            keyframes.append((relative_time, crop_x))
+
+        if not keyframes:
+            return []
+        # Extend the first/last detected position to the clip boundaries and
+        # lightly smooth adjacent detections to reduce camera jitter.
+        if keyframes[0][0] > 0:
+            keyframes.insert(0, (0.0, keyframes[0][1]))
+        if keyframes[-1][0] < duration:
+            keyframes.append((duration, keyframes[-1][1]))
+        smoothed = []
+        for index, (timestamp, x_value) in enumerate(keyframes):
+            neighbors = [keyframes[j][1] for j in range(max(0, index - 1), min(len(keyframes), index + 2))]
+            smoothed.append((timestamp, sum(neighbors) / len(neighbors)))
+        return smoothed
+    finally:
+        capture.release()
+
+
+def _crop_x_expression(keyframes: List[tuple[float, float]], fallback_x: float) -> str:
+    """Build an FFmpeg crop expression that linearly follows detected face positions."""
+    if not keyframes:
+        return str(round(fallback_x, 2))
+    points = sorted(keyframes, key=lambda point: point[0])
+    expression = f"{points[-1][1]:.2f}"
+    for index in range(len(points) - 2, -1, -1):
+        t0, x0 = points[index]
+        t1, x1 = points[index + 1]
+        if t1 <= t0:
+            continue
+        interpolation = f"{x0:.2f}+({x1 - x0:.2f})*(t-{t0:.3f})/{t1 - t0:.3f}"
+        expression = f"if(lt(t,{t1:.3f}),{interpolation},{expression})"
+    return f"if(lt(t,{points[0][0]:.3f}),{points[0][1]:.2f},{expression})"
 
 def export_clip_mp4(
     clip: Clip,
@@ -255,9 +372,18 @@ def export_clip_mp4(
             crop_w = int(round(crop_h * target_ratio))
             crop_w -= crop_w % 2
             max_x = max(0, src_w - crop_w)
-            crop_x = int(round(((pan_x + 1.0) / 2.0) * max_x))
+            crop_x = ((pan_x + 1.0) / 2.0) * max_x
+            if clip.style.reframe_mode == "face_follow":
+                keyframes = _detect_face_keyframes(
+                    video_path, clip.start, clip.end, src_w, crop_w
+                )
+                crop_x_expr = _crop_x_expression(keyframes, crop_x)
+                crop_x_expr = f"2*floor(({crop_x_expr})/2)"
+                crop_filter = f"crop=w={crop_w}:h={crop_h}:x='{crop_x_expr}':y=0"
+            else:
+                crop_filter = f"crop={crop_w}:{crop_h}:{int(round(crop_x))}:0"
             filter_graph = (
-                f"[0:v]crop={crop_w}:{crop_h}:{crop_x}:0,"
+                f"[0:v]{crop_filter},"
                 f"scale={out_w}:{out_h}:flags=lanczos[vbase]"
             )
         else:

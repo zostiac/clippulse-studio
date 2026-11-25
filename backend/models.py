@@ -74,6 +74,14 @@ class ClipStyle(BaseModel):
     caption_position: Literal["top", "middle", "bottom"] = "bottom"
     font_size: int = Field(default=58, ge=24, le=100)
     words_per_line: int = Field(default=3, ge=1, le=6)
+    # Local, export-safe caption controls. "style" keeps the selected preset's look.
+    caption_animation: Literal["pop", "karaoke", "fade", "none"] = "pop"
+    caption_case: Literal["style", "uppercase", "lowercase", "sentence"] = "style"
+    caption_highlight: Literal["style", "yellow", "cyan", "violet", "green", "white"] = "style"
+    caption_background: Literal["style", "outline", "pill", "none"] = "style"
+    caption_font: Literal["Arial", "Arial Black", "DejaVu Sans", "Impact"] = "Arial"
+    # Face follow is performed locally during export; manual pan remains the fallback.
+    reframe_mode: Literal["manual", "face_follow"] = "manual"
     show_hook_banner: bool = True
     hook_banner_text: str = ""
     # Vertical exports never drop below the 1080x1920 floor.
