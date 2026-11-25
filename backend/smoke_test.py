@@ -29,7 +29,7 @@ from ingest import (
     parse_subtitle_text,
     probe_video,
 )  # noqa: E402
-from models import AppSettings, ClipStyle, TranscriptionError  # noqa: E402
+from models import AppSettings, Clip, ClipStyle, TranscriptSegment, TranscriptionError  # noqa: E402
 
 assert resolve_output_size("1080x1920") == (1080, 1920)
 assert resolve_output_size("1440x2560") == (1440, 2560)
