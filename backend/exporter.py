@@ -379,7 +379,7 @@ def export_clip_mp4(
                 )
                 crop_x_expr = _crop_x_expression(keyframes, crop_x)
                 crop_x_expr = f"2*floor(({crop_x_expr})/2)"
-                crop_filter = f"crop={crop_w}:{crop_h}:x='{crop_x_expr}':0"
+                crop_filter = f"crop=w={crop_w}:h={crop_h}:x='{crop_x_expr}':y=0"
             else:
                 crop_filter = f"crop={crop_w}:{crop_h}:{int(round(crop_x))}:0"
             filter_graph = (
