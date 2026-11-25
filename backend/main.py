@@ -238,6 +238,13 @@ def _link_or_copy(src: Path, dst: Path) -> None:
 def _run_analysis(project: Project, settings: AppSettings) -> Project:
     """Transcribe/score a project, persisting `analyzing` then `ready`/`error`."""
     with _store_lock:
+        # Callers may have loaded this project before acquiring the lock. Always
+        # re-read the persisted state while holding the lock so two concurrent
+        # reanalysis requests cannot both pass a stale "ready" status check.
+        current = load_project(project.id)
+        if current is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        project = current
         if project.status == "analyzing":
             raise HTTPException(status_code=409, detail="This project is already being analyzed.")
         if any(item.export_status == "rendering" for item in project.clips):

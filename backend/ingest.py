@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -109,8 +112,15 @@ def probe_video(video_path: Path) -> Tuple[float, int, int]:
         raise RuntimeError("FFprobe was not found. Install FFmpeg or set CLIPPULSE_FFPROBE_PATH.") from exc
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("Video probing timed out.") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or "").strip().splitlines()
+        message = detail[-1] if detail else "unknown media probe error"
+        raise ValueError(f"FFprobe could not read {video_path}: {message}") from exc
 
-    info = json.loads(res.stdout)
+    try:
+        info = json.loads(res.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"FFprobe returned invalid metadata for {video_path}.") from exc
     video_stream = next(
         (stream for stream in info.get("streams", []) if stream.get("codec_type") == "video"),
         None,
@@ -332,8 +342,8 @@ def ingest_youtube(url: str, project_dir: Path) -> Tuple[Path, dict, List[Transc
         "format": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best",
         "merge_output_format": "mp4",
         "outtmpl": out_template,
-        "writesubtitles": True,
-        "writeautomaticsub": True,
+        "writesubtitles": False,
+        "writeautomaticsub": False,
         "subtitleslangs": ["en", "en-US", "en-GB"],
         "subtitlesformat": "vtt/srt",
         "quiet": True,
@@ -373,6 +383,33 @@ def ingest_youtube(url: str, project_dir: Path) -> Tuple[Path, dict, List[Transc
     if video_path.stat().st_size > MAX_UPLOAD_BYTES:
         video_path.unlink(missing_ok=True)
         raise RuntimeError("Downloaded YouTube video exceeds the configured upload size limit.")
+
+    # Subtitle delivery is best-effort: YouTube may rate-limit caption requests
+    # independently of the video stream (HTTP 429). Download the video first so a
+    # temporary captions failure cannot discard an otherwise successful ingestion.
+    subtitle_opts = {
+        "skip_download": True,
+        "outtmpl": out_template,
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": ["en", "en-US", "en-GB"],
+        "subtitlesformat": "vtt/srt",
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "socket_timeout": 20,
+        "retries": 1,
+    }
+    if COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10:
+        subtitle_opts["cookiefile"] = str(COOKIES_FILE)
+    try:
+        with yt_dlp.YoutubeDL(subtitle_opts) as subtitle_ydl:
+            subtitle_ydl.extract_info(url, download=True)
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "YouTube subtitles unavailable for %s; continuing without captions: %s",
+            video_id or "video", exc,
+        )
 
     # Parse subtitle file if downloaded
     transcript: List[TranscriptSegment] = []
@@ -483,6 +520,14 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             )
         )
 
+    # A previous interrupted or concurrent generation can leave a large but invalid MP4
+    # (for example, an MP4 without its final moov atom). Never trust file size alone.
+    if out_video.exists():
+        try:
+            probe_video(out_video)
+        except (ValueError, OSError, subprocess.SubprocessError):
+            out_video.unlink(missing_ok=True)
+
     if not out_video.exists() or out_video.stat().st_size < 100_000:
         # Build rich 1920x1080 (full HD) studio video with dual speaker panels + live topic badge + modulated speech-cadence audio
         left_lbl = cfg["left_speaker"]
@@ -545,6 +590,8 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             "+0.05*sin(2*PI*320*t)*(0.4+0.6*sin(2*PI*1.5*t))"
         )
 
+        temp_video = out_video.with_name(f"{out_video.stem}.{uuid.uuid4().hex}.tmp.mp4")
+        temp_video.unlink(missing_ok=True)
         cmd = [
             FFMPEG_BIN,
             "-y",
@@ -570,21 +617,29 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             "128k",
             "-movflags",
             "+faststart",
-            str(out_video),
+            str(temp_video),
         ]
         try:
             subprocess.run(cmd, capture_output=True, check=True, timeout=180)
+            # Validate the completed temporary file before publishing it as the shared demo.
+            probe_video(temp_video)
+            os.replace(temp_video, out_video)
         except subprocess.TimeoutExpired as exc:
+            temp_video.unlink(missing_ok=True)
             raise RuntimeError("Demo video generation timed out.") from exc
         except FileNotFoundError as exc:
+            temp_video.unlink(missing_ok=True)
             raise RuntimeError(
                 "FFmpeg not found on PATH. Install FFmpeg and restart the server."
             ) from exc
-        except subprocess.CalledProcessError as exc:
-            tail = (exc.stderr or b"").decode(errors="ignore").strip().splitlines()[-3:]
-            raise RuntimeError(
-                "Demo video generation failed (ffmpeg): " + (" / ".join(tail) or str(exc))
-            ) from exc
+        except (subprocess.CalledProcessError, ValueError) as exc:
+            temp_video.unlink(missing_ok=True)
+            if isinstance(exc, subprocess.CalledProcessError):
+                tail = (exc.stderr or b"").decode(errors="ignore").strip().splitlines()[-3:]
+                detail = " / ".join(tail) or str(exc)
+            else:
+                detail = str(exc)
+            raise RuntimeError("Demo video generation failed: " + detail) from exc
 
     meta = {
         "title": cfg["title"],

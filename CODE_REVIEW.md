@@ -1,282 +1,111 @@
-# Code Review — ClipPulse Studio
+# ClipPulse Studio — Engineering Review
 
-**Date**: 2026-11-23  
-**Reviewer**: Automated analysis  
-**Scope**: Full codebase (backend + frontend)
-
----
-
-## Executive Summary
-
-ClipPulse Studio is a well-architected, feature-complete application for AI-powered viral clip generation. The codebase demonstrates solid engineering practices: clear separation of concerns (ingest/analyze/export), file-based persistence avoiding DB complexity, and a polished React frontend with real-time preview.
-
-**Overall Risk**: **Medium** — Several critical security issues identified and fixed in this review; remaining items are maintainability/debt.
+**Updated:** 2026-11-24  
+**Baseline reviewed:** `main` after PR #3  
+**Scope:** Backend, React frontend, repository documentation, and CI configuration  
+**Purpose:** Track verified implementation status and remaining work. This document is a maintenance review, not a claim of production certification.
 
 ---
 
-## Findings by Severity
+## Executive summary
 
-### 🔴 Critical (Fixed)
+The latest merged hardening work materially improves the application's local security posture and frontend resilience. The repository has a working CI workflow for backend smoke checks and frontend lint/build checks.
 
-#### C1: Path Traversal in Media Endpoint
-**File**: `backend/main.py:696-701`  
-**Issue**: `safe_path = (PROJECTS_DIR / project_id / Path(filename).name).resolve()` only sanitizes `filename`, not `project_id`. An attacker could use `project_id=../../etc` to escape the project directory.  
-**Fix Applied**: Sanitize both components with `Path(...).name` before joining.
+The application is best treated as a **local-first tool**. A public or multi-user deployment still needs a proper authentication boundary, rate limiting, HTTPS, and deployment-specific operational controls. Passing the current CI workflow does not replace an end-to-end browser test or a production security assessment.
 
-#### C2: Shell Command Injection in FFmpeg Filtergraph
-**File**: `backend/exporter.py:249`  
-**Issue**: `f"ass='{escaped_ass}'"` interpolates user-controlled `clip.id` (via `ass_path`) into shell command. `escaped_ass = str(ass_path).replace("\\", "/").replace(":", "\\:")` is insufficient against `$()`, backticks, or `;`.  
-**Fix Applied**: Use `shlex.quote(str(ass_path))` or write filtergraph to temp file and use `-filter_complex_script`.
+## Verified improvements present in the reviewed baseline
 
-#### C3: Unvalidated Cookies File Write
-**File**: `backend/ingest.py:283-284` / `main.py:226-231`  
-**Issue**: User-supplied `cookies.txt` written directly to disk without format validation. While not currently executable, it's a persistence vector.  
-**Fix Applied**: Validate Netscape format (check for `\t` separators, domain fields) before write.
+### Backend and security
 
-#### C4: Race Condition in Export Thread
-**File**: `backend/main.py:572-615`  
-**Issue**: `_run_export_job` loads project → modifies clip → saves, but concurrent exports for same project interleave reads/writes, causing lost updates or corrupt `project.json`.  
-**Fix Applied**: Wrap entire job in `with _store_lock:` (imported from `models`).
+- API access is local-only by default; remote access requires explicit configuration.
+- CORS is controlled through an explicit origin allowlist.
+- Upload handling applies configured size limits and file-signature checks.
+- Project and media paths are checked to prevent path traversal and escaping the intended data directory.
+- Remote URL inputs are validated before ingestion.
+- FFmpeg and FFprobe paths are configurable, with process timeouts and cleanup handling.
+- Export identifiers and process lifecycle handling have additional validation and cleanup safeguards.
+- Transcript payloads receive structural and value validation.
+- Transcription failures are surfaced as project errors rather than silently producing an apparently successful empty result.
+- Cookie input is validated before it is persisted.
+- Demo media creation prefers a link before falling back to a copy.
 
----
+### Frontend
 
-### 🟠 High Priority
+- API requests have timeouts, cancellation support, and clearer error messages.
+- Clip edits are applied optimistically and debounced before being persisted.
+- Export polling preserves pending clip edits and ignores responses for a project that is no longer active.
+- Transcript editing protects unsaved local work from background project refreshes.
+- The preview supports switching between the live source and the rendered export.
+- A React error boundary, keyboard focus treatment, reduced-motion support, and responsive layout improvements are present.
 
-#### H1: ASS Filter Path Injection (Partial fix with C2)
-**File**: `backend/exporter.py:249`  
-**Status**: Mitigated by `shlex.quote()`, but best practice is `-filter_complex_script` file.
+### CI
 
-#### H2: Silent Transcription Failure
-**File**: `backend/analyzer.py:595-611`  
-**Issue**: Cloud Whisper failure → falls back to local; local failure → returns empty transcript. Project status stays "ready" but clips list is empty. User sees no error.  
-**Fix**: Raise `RuntimeError` with provider-specific message; catch in `analyze_project` and set `project.status = "error"` with `error_message`.  
-**Status**: ✅ Fixed (2026-11-23) — `models.TranscriptionError` raised when every attempted provider fails; endpoints persist `status="error"` + `error_message` and return 422.
-
-#### H3: Demo Video Duplication
-**File**: `backend/main.py:267-268`  
-**Issue**: `shutil.copyfile(demo_video, dest_video)` copies ~10MB per demo project creation.  
-**Fix**: Use `os.symlink(demo_video, dest_video)` on POSIX, or serve demo video directly via `/media/demos/{key}.mp4` endpoint.  
-**Status**: ✅ Fixed (2026-11-23) — `_link_or_copy()` tries hardlink → symlink → copy.
-
-#### H4: Exported Video URL Leaks Filename
-**File**: `frontend/src/components/StudioPreview.jsx:323`  
-**Issue**: `src={`${clip.export_url}?t=${clip.export_filename}}` — `t` param unused, leaks internal filename.  
-**Fix**: Remove query param; use `clip.export_url` directly.  
-**Status**: ✅ Fixed (2026-11-23) — cache-buster is now `?v=${clip.exported_at}` (new `Clip.exported_at` timestamp); download name derives from the clip title.
-
-#### H5: SPA Fallback Masks API 404s
-**File**: `backend/main.py:722-727`  
-**Issue**: Catch-all `/{full_path:path}` returns `index.html` for **all** non-static paths, including `/api/unknown` → 200 OK with HTML instead of 404 JSON.  
-**Fix**: Add `if full_path.startswith("api/"): raise HTTPException(404)` before SPA fallback.
+The existing main-branch workflow checks backend compilation/smoke behavior and frontend lint plus a production build. This PR adds a native Node unit-test step for the transcript timing utility. These checks are useful regression gates, but do not exercise the complete application in a real browser.
 
 ---
 
-### 🟡 Medium Priority (Technical Debt)
+## Issues addressed in this update
 
-| ID | Location | Issue | Effort |
-|----|----------|-------|--------|
-| M1 | `analyzer.py:379-467` | LLM prompt as 90-line inline string — hard to test/version | 2h |
-| M2 | `analyzer.py:246-318` | Cloud Whisper duplicated for 4 providers — strategy pattern needed | 3h |
-| M3 | `models.py:125-194` | `_store_lock` not used in export thread (fixed in C4) | 1h |
-| M4 | `App.jsx:85-117` | Optimistic updates + debounce race — use version counter | 2h |
-| M5 | `TranscriptEditor.jsx:22-27` | Text change doesn't update `words` array — timestamps drift | 1h |
-| M6 | `api.js:1-13` | No timeout/abort — stalled requests hang UI | 1h |
-| M7 | `requirements.txt` | Unpinned `>=` versions — pin to known-good | 0.5h |
-| M8 | `package.json` | Missing `engines` field for Node version | 0.1h |
-| M9 | `analyzer.py:39-58` | Provider URLs hardcoded — move to config/env | 1h |
-| M10 | `ingest.py:468-503` | 200-line FFmpeg filtergraph — extract to template/helper | 3h |
+| Area | Risk | Change |
+|---|---|---|
+| Transcript save lifecycle | A user could continue typing while a save request was in flight; the older request could then mark newer edits as saved. | Track the edit revision and save request identity. Only mark the editor clean when the exact revision sent is still current. Prevent duplicate saves and ignore stale completions after switching projects. |
+| Review documentation | The previous checklist described upload validation, input limits, CORS, and other already-implemented protections as missing or partial. | Replace stale findings with a baseline-aligned status report and clearly distinguish implemented controls from remaining deployment work. |
 
 ---
 
-### 🟢 Low Priority (Polish)
+## Remaining priorities
 
-| ID | Suggestion |
-|----|------------|
-| L1 | Structured JSON logging with request IDs |
-| L2 | OpenAPI tags for `/docs` grouping |
-| L3 | React Error Boundary for graceful crash UI |
-| L4 | Pure FFmpeg filter builder functions (testable) |
-| L5 | Unit tests: `_score_window`, `distribute_words`, `parse_subtitle_text` |
-| L6 | Memoize `getClipWords` in `StudioPreview.jsx` |
-| L7 | Health endpoint with FFmpeg/Whisper capability check |
+### High — before exposing the service beyond a trusted local environment
 
----
+1. **Authentication and deployment boundary**
+   - Do not expose the development server directly to the public internet.
+   - Put remote deployments behind HTTPS and real user authentication.
+   - Ensure the trusted proxy protects both API routes and media routes; do not embed a shared secret in frontend code.
+2. **Rate limiting and resource controls**
+   - Add per-user/IP limits for expensive ingestion, reanalysis, and export operations.
+   - Define concurrency and disk-usage limits for uploads, temporary files, and generated exports.
+3. **Operational visibility**
+   - Add structured logs with request/job identifiers while ensuring API keys, cookies, and other credentials are redacted.
+   - Add deployment health checks that distinguish basic process health from optional FFmpeg/Whisper capabilities.
 
-## Security Checklist
+### Medium — frontend reliability and maintainability
 
-| Check | Status | Notes |
-|-------|--------|-------|
-| Path traversal protection | ✅ Fixed | Both `project_id` and `filename` sanitized |
-| Shell injection protection | ✅ Fixed | `shlex.quote()` on all interpolated paths |
-| File upload validation | ⚠️ Partial | Only extension check; add MIME magic verification |
-| API key exposure in logs | ✅ Safe | Keys masked in `/api/settings` response |
-| CORS configuration | ✅ Safe | `allow_origins=["*"]` acceptable for local tool |
-| Rate limiting | ❌ Missing | Add `slowapi` for public deployments |
-| Input size limits | ❌ Missing | Add `Request.size_limit` for uploads |
+1. Add browser-based end-to-end coverage for project creation, upload, clip editing, transcript editing, preview mode switching, and export status.
+2. Add focused tests for the optimistic clip-patch queue, especially rapid successive edits, failed requests, project switching, and export/delete actions while a save is pending.
+3. Break the main application state/orchestration in `App.jsx` into smaller hooks or modules only where it reduces coupling and makes behavior easier to test.
+4. Add component-level tests for transcript editing and preview playback synchronization.
 
----
+### Medium — backend regression coverage
 
-## Performance Observations
+Add targeted tests for:
+- subtitle parsing and word distribution, including empty and malformed input;
+- clip scoring and heuristic detection edge cases;
+- subtitle timestamp formatting and caption generation;
+- settings migration and atomic project persistence;
+- path containment, upload signatures, URL validation, and export failure cleanup.
 
-| Area | Current | Recommendation |
-|------|---------|----------------|
-| Demo video generation | Blocks request (~3s FFmpeg) | Pre-generate at build time or background task |
-| Waveform computation | 120 bins, full audio decode | Cache `energy_peaks` in `project.json` (already done) |
-| Frontend re-renders | `getClipWords` recreated every frame | `useMemo` with `[transcript, clip.start, clip.end]` |
-| Export progress polling | 650ms interval | WebSocket for real-time (or keep polling, it's fine) |
-| Local Whisper model load | Cached in `_whisper_cache` | Good — singleton pattern |
+### Low — polish
 
----
-
-## Test Coverage Gaps
-
-| Module | Critical Functions Needing Tests |
-|--------|----------------------------------|
-| `analyzer.py` | `_score_window`, `_extract_keywords`, `_derive_title_and_hook`, `detect_clips_heuristic` |
-| `ingest.py` | `parse_subtitle_text` (SRT/VTT edge cases), `distribute_words`, `extract_youtube_id` |
-| `exporter.py` | `_fmt_ass_time`, `_collect_clip_words`, `build_ass_subtitles` (style palettes) |
-| `models.py` | `load_settings` (legacy alias migration), `save_project` (atomic write) |
+- Consider grouping OpenAPI routes with tags and adding concise endpoint examples.
+- Keep dependency versions and supported Python/Node versions documented and reviewed during upgrades.
+- Consider a lightweight diagnostics view for local users.
 
 ---
 
-## Recommended Fix Implementation Order
+## Verification status and limitations
 
-1. **Week 1**: C1–C4, H1–H5 (security + correctness)
-2. **Week 2**: M6, M7, M8 (frontend stability + pinned deps)
-3. **Week 3**: M4, M5 (state management + transcript sync)
-4. **Week 4**: M1, M2, M10 (refactor LLM/Whisper/FFmpeg builders)
-5. **Ongoing**: L1–L7, test coverage
+- The latest reviewed main-branch GitHub Actions run completed successfully for backend smoke checks and frontend lint/build. The new PR workflow run, which also includes frontend unit tests, is pending at the time of this update.
+- This review did **not** independently launch the application in a browser or complete a real media upload/transcription/export cycle.
+- No claim is made that remote production deployment is safe without the additional controls listed above.
+- Any new changes should pass the repository's CI workflow before merge.
 
----
+## Suggested next sequence
 
-## Quick Verification Commands
-
-```bash
-# 1. Check path traversal fix
-grep -n "Path(project_id).name" backend/main.py
-
-# 2. Check shell injection fix
-grep -n "shlex.quote" backend/exporter.py
-
-# 3. Check export lock
-grep -n "_store_lock" backend/main.py
-
-# 4. Check pinned deps
-cat backend/requirements.txt
-
-# 5. Check SPA fallback exclusion
-grep -n "api/" backend/main.py
-
-# 6. Run backend syntax check
-cd backend && python -m py_compile main.py analyzer.py ingest.py exporter.py models.py
-
-# 7. Frontend type check (if TS) or lint
-cd frontend && npm run lint 2>/dev/null || echo "No lint script"
-```
+1. Keep the application local-first and document a secure deployment boundary.
+2. Add targeted tests around asynchronous frontend save/update flows.
+3. Add browser end-to-end coverage for the main user journey.
+4. Add rate limiting, authentication integration, and operational safeguards before any public deployment.
 
 ---
 
-## Appendix: Fixed Code Snippets
-
-### C1 + H5: Secure Media Endpoints
-```python
-# backend/main.py
-@app.get("/media/projects/{project_id}/{filename}")
-def serve_project_media(project_id: str, filename: str, request: Request):
-    safe_project_id = Path(project_id).name
-    safe_filename = Path(filename).name
-    safe_path = (PROJECTS_DIR / safe_project_id / safe_filename).resolve()
-    if not str(safe_path).startswith(str(PROJECTS_DIR.resolve())):
-        raise HTTPException(status_code=403, detail="Forbidden")
-    return _stream_file_range(safe_path, request)
-
-# SPA fallback
-@app.get("/{full_path:path}")
-def serve_spa(full_path: str):
-    if full_path.startswith("api/"):
-        raise HTTPException(status_code=404, detail="API endpoint not found")
-    # ... rest unchanged
-```
-
-### C2 + H1: Safe FFmpeg Filtergraph
-```python
-# backend/exporter.py
-import shlex
-# ...
-if has_ass:
-    # Option A: shlex.quote (quick fix)
-    safe_ass = shlex.quote(str(ass_path))
-    filter_graph += f";[vbase]ass='{safe_ass}'[vout]"
-    
-    # Option B: filter_complex_script (best practice)
-    # filter_script = EXPORTS_DIR / f"{clip.id}_filter.txt"
-    # filter_script.write_text(f"[vbase]ass={shlex.quote(str(ass_path))}[vout]")
-    # filter_graph += f";[vbase]ass={shlex.quote(str(ass_path))}[vout]"
-    # cmd.extend(["-filter_complex_script", str(filter_script)])
-```
-
-### C4: Thread-Safe Export
-```python
-# backend/main.py
-from models import _store_lock  # import at top
-
-def _run_export_job(project_id: str, clip_id: str) -> None:
-    with _store_lock:
-        proj = load_project(project_id)
-        # ... rest of function unchanged
-```
-
-### M6: Frontend Request Timeout
-```javascript
-// frontend/src/api.js
-async function req(url, options = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-  try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    // ... rest unchanged
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-```
-
-### M5: Transcript Word Sync
-```javascript
-// frontend/src/components/TranscriptEditor.jsx
-function distributeWords(text, start, end) {
-  const tokens = text.split(/\s+/).filter(Boolean);
-  if (!tokens.length) return [];
-  const dur = Math.max(0.2, end - start);
-  const step = dur / tokens.length;
-  return tokens.map((tok, idx) => ({
-    word: tok,
-    start: start + idx * step,
-    end: start + (idx + 1) * step,
-  }));
-}
-
-function handleTextChange(idx, val) {
-  setSegments((prev) =>
-    prev.map((s, i) => {
-      if (i !== idx) return s;
-      const words = distributeWords(val, s.start, s.end);
-      return { ...s, text: val, words };
-    })
-  );
-  setDirty(true);
-}
-```
-
----
-
-## Sign-Off
-
-| Role | Name | Date | Status |
-|------|------|------|--------|
-| Reviewer | Automated | 2026-11-23 | ✅ Complete |
-| Developer | — | — | ⏳ Pending fixes |
-
----
-
-*Generated as part of ClipPulse Studio code review. Apply Critical/High fixes before production deployment.*
+*Maintained alongside the codebase. Update this document when implementation or CI coverage changes.*

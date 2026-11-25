@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Sliders, FileText, Share2 } from "lucide-react";
 import { api } from "./api";
+import { replaceProjectIfCurrent } from "./utils/projectState";
 import HeaderBar from "./components/HeaderBar";
 import IngestView from "./components/IngestView";
 import ClipListSidebar from "./components/ClipListSidebar";
@@ -270,9 +271,12 @@ export default function App() {
 
   async function handleSaveTranscript(segments) {
     if (!activeProject) return;
+    // Capture the target before awaiting: the user can switch projects while
+    // the server is saving. A late response must never replace another project.
+    const projectId = activeProject.id;
     try {
-      const updated = await api.updateTranscript(activeProject.id, segments);
-      setActiveProject(updated);
+      const updated = await api.updateTranscript(projectId, segments);
+      setActiveProject((current) => replaceProjectIfCurrent(current, projectId, updated));
       setActionError("");
     } catch (error) {
       setActionError(error.message || "Could not save the transcript.");
