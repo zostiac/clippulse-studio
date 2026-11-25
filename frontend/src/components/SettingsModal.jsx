@@ -195,9 +195,9 @@ export default function SettingsModal({ open, onClose, settings, onUpdated }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-      <div role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" className="w-full max-w-2xl bg-[#12141D] border border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-        <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+    <div className="cp-settings-backdrop fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+      <div role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" className="cp-settings-dialog w-full max-w-2xl bg-[#12141D] border border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+        <div className="cp-settings-header px-5 py-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-emerald-400" />
             <h2 id="settings-modal-title" className="font-semibold text-white text-base">
@@ -213,7 +213,7 @@ export default function SettingsModal({ open, onClose, settings, onUpdated }) {
           </button>
         </div>
 
-        <div className="p-5 overflow-y-auto space-y-6">
+        <div className="cp-settings-content p-5 overflow-y-auto space-y-6">
           {msg && (
             <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />

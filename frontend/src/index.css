@@ -91,3 +91,206 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* ClipPulse Studio — cohesive creative workspace refresh */
+:root {
+  --cp-bg: #090d12;
+  --cp-panel: #101720;
+  --cp-panel-raised: #151f2a;
+  --cp-line: rgba(164, 190, 207, 0.13);
+  --cp-muted: #91a2b2;
+  --cp-text: #edf4f8;
+  --cp-accent: #45d6c5;
+  --cp-accent-strong: #20b9aa;
+  --cp-glow: rgba(40, 205, 185, 0.14);
+}
+@layer base {
+  html, body { background: var(--cp-bg); }
+  body {
+    background:
+      radial-gradient(ellipse at 12% -20%, rgba(38, 190, 174, .10), transparent 34rem),
+      radial-gradient(ellipse at 92% 2%, rgba(87, 116, 210, .08), transparent 30rem),
+      var(--cp-bg);
+    color: var(--cp-text);
+  }
+  ::selection { background: rgba(69, 214, 197, .3); }
+  button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible,
+  select:focus-visible, [tabindex]:focus-visible {
+    outline-color: var(--cp-accent);
+  }
+}
+.cp-app-shell { background: transparent !important; }
+.cp-header {
+  min-height: 68px;
+  padding-inline: clamp(16px, 2.4vw, 36px);
+  background: rgba(12, 18, 25, .88) !important;
+  border-color: var(--cp-line) !important;
+  box-shadow: 0 1px 0 rgba(255,255,255,.025);
+}
+.cp-header button:hover { color: var(--cp-accent); }
+.cp-dashboard {
+  background:
+    radial-gradient(ellipse at 50% 0, rgba(53, 190, 176, .07), transparent 36rem);
+  padding: clamp(24px, 4vw, 56px) clamp(16px, 3vw, 42px) 64px !important;
+}
+.cp-dashboard-content { width: min(100%, 1160px); gap: 42px !important; }
+.cp-dashboard-hero { text-align: left !important; margin: 0 0 4px !important; max-width: 780px !important; }
+.cp-dashboard-hero > div:first-child {
+  border-radius: 999px !important;
+  background: rgba(69,214,197,.08) !important;
+  border: 1px solid rgba(69,214,197,.2) !important;
+  color: #8ce7dc !important;
+  letter-spacing: .015em;
+}
+.cp-dashboard-hero h1 {
+  font-size: clamp(2.35rem, 5vw, 4.1rem) !important;
+  line-height: 1.04 !important;
+  letter-spacing: -.055em !important;
+  max-width: 760px;
+}
+.cp-dashboard-hero h1 span {
+  background: linear-gradient(100deg, #f2fbff 4%, #7be4d7 55%, #8eb6ff 100%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+}
+.cp-dashboard-hero p { max-width: 680px; color: #9aabba !important; font-size: 14px !important; }
+.cp-ingest-card {
+  background: linear-gradient(145deg, rgba(20,31,42,.97), rgba(13,20,28,.98)) !important;
+  border: 1px solid rgba(153,190,205,.16) !important;
+  border-radius: 22px !important;
+  box-shadow: 0 24px 70px rgba(0,0,0,.25) !important;
+}
+.cp-ingest-card > div:first-child {
+  background: rgba(8,14,20,.52) !important;
+  border-color: var(--cp-line) !important;
+  padding: 8px 10px 0;
+}
+.cp-ingest-card > div:first-child button {
+  min-height: 54px;
+  border-radius: 12px 12px 0 0;
+  font-size: 12px !important;
+}
+.cp-ingest-card > div:nth-child(2) { padding: clamp(18px, 3vw, 30px) !important; }
+.cp-dashboard input:not([type="file"]), .cp-dashboard textarea, .cp-dashboard select,
+.cp-settings-dialog input:not([type="file"]), .cp-settings-dialog textarea, .cp-settings-dialog select {
+  background: #0b1219 !important;
+  border: 1px solid rgba(151,180,195,.18) !important;
+  border-radius: 11px !important;
+  color: #edf5f8 !important;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+.cp-dashboard input:focus, .cp-dashboard textarea:focus, .cp-dashboard select:focus,
+.cp-settings-dialog input:focus, .cp-settings-dialog textarea:focus, .cp-settings-dialog select:focus {
+  border-color: rgba(69,214,197,.65) !important;
+  box-shadow: 0 0 0 3px rgba(69,214,197,.09);
+}
+.cp-dashboard button[type="submit"], .cp-dashboard form button[type="button"],
+.cp-settings-dialog button[type="submit"] {
+  border-radius: 11px !important;
+  box-shadow: none !important;
+}
+.cp-dashboard button[type="submit"] {
+  background: linear-gradient(110deg, #24b8aa, #329cbb) !important;
+  color: #041315 !important;
+}
+.cp-dashboard button[type="submit"]:hover { filter: brightness(1.08); }
+.cp-projects-section h2 {
+  color: #e5f0f4 !important;
+  text-transform: none !important;
+  letter-spacing: -.02em !important;
+  font-size: 18px !important;
+}
+.cp-project-card {
+  background: rgba(17,26,36,.9) !important;
+  border-color: var(--cp-line) !important;
+  border-radius: 17px !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+}
+.cp-project-card:hover {
+  border-color: rgba(69,214,197,.42) !important;
+  transform: translateY(-3px);
+  box-shadow: 0 16px 36px rgba(0,0,0,.24);
+}
+.cp-project-thumb { background: #0b1219 !important; }
+.cp-project-card > div:last-child { padding: 18px !important; }
+.cp-project-card > div:last-child h3 { font-size: 14px !important; letter-spacing: -.01em; }
+.cp-project-card > div:last-child p { color: var(--cp-muted) !important; }
+.cp-project-card > div:last-child span { color: #74dfd1 !important; }
+.cp-settings-backdrop { background: rgba(2,7,11,.78) !important; padding: 18px !important; }
+.cp-settings-dialog {
+  width: min(100%, 850px) !important;
+  max-height: min(92vh, 900px) !important;
+  background: #101922 !important;
+  border: 1px solid rgba(157,190,205,.2) !important;
+  border-radius: 22px !important;
+  box-shadow: 0 32px 100px rgba(0,0,0,.58) !important;
+}
+.cp-settings-header {
+  padding: 20px 24px !important;
+  background: rgba(255,255,255,.018);
+  border-color: var(--cp-line) !important;
+}
+.cp-settings-header h2 { font-size: 17px !important; letter-spacing: -.025em; }
+.cp-settings-content { padding: 24px !important; gap: 26px !important; }
+.cp-settings-content form { padding: 20px; border: 1px solid var(--cp-line); border-radius: 16px; background: rgba(7,13,19,.35); }
+.cp-settings-content form > div:first-child h3 { font-size: 14px !important; }
+.cp-settings-content form > div:not(:first-child) > button:not([type="submit"]) {
+  border-radius: 12px !important;
+  padding: 14px !important;
+}
+.cp-settings-content form > div:not(:first-child) > button[aria-pressed="true"] {
+  border-color: rgba(69,214,197,.65) !important;
+  background: rgba(69,214,197,.09) !important;
+}
+.cp-settings-content hr { border-color: var(--cp-line) !important; }
+.cp-settings-content > div:not(.cp-settings-header) { border-radius: 15px; }
+.cp-clip-sidebar, .cp-inspector {
+  background: #0d151d !important;
+  border-color: var(--cp-line) !important;
+}
+.cp-clip-sidebar > div { border-color: var(--cp-line) !important; }
+.cp-clip-card {
+  border-radius: 14px !important;
+  background: rgba(18,28,38,.82) !important;
+  border-color: var(--cp-line) !important;
+}
+.cp-clip-card:hover { border-color: rgba(69,214,197,.32) !important; }
+.cp-clip-card[class*="border-violet"] {
+  background: rgba(34,91,91,.18) !important;
+  border-color: rgba(69,214,197,.55) !important;
+  box-shadow: 0 8px 24px rgba(22,164,150,.08) !important;
+}
+.cp-editor-controls input:not([type="range"]), .cp-editor-controls select,
+.cp-transcript-editor textarea, .cp-social-panel input, .cp-social-panel textarea,
+.cp-studio-preview select {
+  background-color: #0b131b !important;
+  border-color: var(--cp-line) !important;
+}
+.cp-editor-controls button:hover, .cp-social-panel button:hover { border-color: rgba(69,214,197,.4); }
+.cp-studio-preview { background: #090e14 !important; }
+.cp-studio-preview > div { border-color: var(--cp-line) !important; }
+.cp-inspector > div:first-child { background: #0b131b !important; border-color: var(--cp-line) !important; }
+.cp-inspector > div:first-child button[class*="border-violet"] {
+  border-color: var(--cp-accent) !important;
+  color: #a5f1e8 !important;
+}
+.cp-inspector > div:last-child { scrollbar-color: #30434d transparent; }
+@media (max-width: 900px) {
+  .cp-dashboard { padding-top: 28px !important; }
+  .cp-dashboard-content { gap: 30px !important; }
+  .cp-dashboard-hero h1 { font-size: clamp(2.1rem, 8vw, 3rem) !important; }
+  .cp-settings-content { padding: 16px !important; }
+  .cp-settings-content form { padding: 14px; }
+}
+@media (max-width: 640px) {
+  .cp-header { min-height: 60px; padding-inline: 12px; }
+  .cp-dashboard { padding-inline: 14px !important; }
+  .cp-ingest-card { border-radius: 16px !important; }
+  .cp-ingest-card > div:first-child button { min-height: 50px; padding-inline: 6px !important; }
+  .cp-settings-backdrop { padding: 8px !important; align-items: flex-end !important; }
+  .cp-settings-dialog { max-height: 94vh !important; border-radius: 18px 18px 12px 12px !important; }
+  .cp-settings-header { padding: 16px !important; }
+  .cp-settings-content { padding: 12px !important; }
+  .cp-clip-sidebar { max-height: 42vh !important; }
+}

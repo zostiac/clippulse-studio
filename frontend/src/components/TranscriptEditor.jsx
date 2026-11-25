@@ -89,7 +89,7 @@ export default function TranscriptEditor({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="cp-transcript-editor space-y-4">
       {/* Trim Start / End */}
       {clip && (
         <div className="p-3 rounded-xl bg-[#0A0B0F] border border-white/10 space-y-2">

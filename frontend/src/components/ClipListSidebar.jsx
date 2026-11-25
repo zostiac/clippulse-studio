@@ -43,7 +43,7 @@ export default function ClipListSidebar({
   }
 
   return (
-    <aside className="w-full lg:w-[320px] xl:w-[340px] shrink-0 max-h-[34vh] lg:max-h-none min-h-[220px] border-r border-white/10 bg-[#0E1017] flex flex-col min-h-0">
+    <aside className="cp-clip-sidebar w-full lg:w-[320px] xl:w-[340px] shrink-0 max-h-[34vh] lg:max-h-none min-h-[220px] border-r border-white/10 bg-[#0E1017] flex flex-col min-h-0">
       {/* Header */}
       <div className="p-3.5 border-b border-white/10 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -142,7 +142,7 @@ export default function ClipListSidebar({
             <div
               key={clip.id}
               onClick={() => onSelectClip(clip.id)}
-              className={`group cursor-pointer rounded-xl p-3 border transition ${
+              className={`cp-clip-card group cursor-pointer rounded-xl p-3 border transition ${
                 active
                   ? "bg-[#171B2A] border-violet-500/70 shadow-lg shadow-violet-950/30"
                   : "bg-[#12141D] border-white/8 hover:border-white/20"

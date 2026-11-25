@@ -23,7 +23,7 @@ export default function HeaderBar({
     : 0;
 
   return (
-    <header className="h-14 shrink-0 border-b border-white/10 bg-[#0E1017]/95 backdrop-blur px-4 flex items-center justify-between gap-3 z-30">
+    <header className="cp-header h-14 shrink-0 border-b border-white/10 bg-[#0E1017]/95 backdrop-blur px-4 flex items-center justify-between gap-3 z-30">
       <div className="flex items-center gap-3 min-w-0">
         <button
           onClick={onGoHome}
