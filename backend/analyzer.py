@@ -5,10 +5,12 @@ import math
 import re
 import subprocess
 import threading
+import wave
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import httpx
+import numpy as np
 
 from ffutil import FFMPEG_BIN, FFPROBE_BIN
 
@@ -223,14 +225,30 @@ def _derive_title_and_hook(segs: List[TranscriptSegment]) -> Tuple[str, str]:
     return title, hook_banner
 
 
+def _load_pcm_wav_float32(wav_path: Path) -> np.ndarray:
+    """Read a 16-bit PCM WAV file into a 1D float32 array in [-1.0, 1.0].
+
+    Passing a decoded NumPy array to faster-whisper bypasses PyAV's av.open(),
+    which breaks on PyAV 16+ where the `metadata_errors` kwarg was removed.
+    """
+    with wave.open(str(wav_path), "rb") as wf:
+        if wf.getsampwidth() != 2:
+            raise RuntimeError(f"Expected 16-bit PCM WAV, got {wf.getsampwidth() * 8}-bit.")
+        raw = wf.readframes(wf.getnframes())
+    if not raw:
+        return np.zeros(0, dtype=np.float32)
+    return np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+
+
 def transcribe_with_local_whisper(video_path: Path, model_name: str = "tiny") -> List[TranscriptSegment]:
     wav_path = video_path.parent / "audio_local.wav"
     try:
-        _extract_audio(video_path, ["-f", "wav"], wav_path)
+        _extract_audio(video_path, ["-c:a", "pcm_s16le", "-f", "wav"], wav_path)
+        audio = _load_pcm_wav_float32(wav_path)
         model = _get_local_whisper(model_name or "tiny")
         try:
             segs_iter, _ = model.transcribe(
-                str(wav_path),
+                audio,
                 word_timestamps=True,
                 vad_filter=True,
             )
@@ -238,7 +256,7 @@ def transcribe_with_local_whisper(video_path: Path, model_name: str = "tiny") ->
             # VAD (onnxruntime) can be unavailable on some machines; plain
             # transcription still works without it.
             segs_iter, _ = model.transcribe(
-                str(wav_path),
+                audio,
                 word_timestamps=True,
             )
         segments: List[TranscriptSegment] = []

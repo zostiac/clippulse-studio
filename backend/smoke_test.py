@@ -167,18 +167,24 @@ def _boom(*_a, **_k):
     raise RuntimeError("provider down")
 
 
+_orig_cloud_whisper = analyzer.transcribe_with_cloud_whisper
+_orig_local_whisper = analyzer.transcribe_with_local_whisper
 analyzer.transcribe_with_cloud_whisper = _boom
 analyzer.transcribe_with_local_whisper = _boom
 
 try:
-    analyzer.analyze_project(
-        "proj_t", "t", __file__, 60.0, [], [],
-        AppSettings(ai_provider="groq", enable_local_whisper=True, api_key="k"),
-    )
-except TranscriptionError as exc:
-    print("H2 OK ->", str(exc)[:120])
-else:
-    raise AssertionError("TranscriptionError not raised")
+    try:
+        analyzer.analyze_project(
+            "proj_t", "t", __file__, 60.0, [], [],
+            AppSettings(ai_provider="groq", enable_local_whisper=True, api_key="k"),
+        )
+    except TranscriptionError as exc:
+        print("H2 OK ->", str(exc)[:120])
+    else:
+        raise AssertionError("TranscriptionError not raised")
+finally:
+    analyzer.transcribe_with_cloud_whisper = _orig_cloud_whisper
+    analyzer.transcribe_with_local_whisper = _orig_local_whisper
 
 # No provider configured at all -> heuristic-only fallback, no exception.
 tr, clips, eng = analyzer.analyze_project(
@@ -349,5 +355,44 @@ if _shutil.which(FFMPEG_BIN) and _shutil.which(FFPROBE_BIN):
     print("upload, clip trimming, FFmpeg export, and export invalidation OK")
 else:
     print("audio extraction SKIPPED (ffmpeg not on PATH)")
+
+# --- local whisper passes float32 ndarray (avoids PyAV 16+ metadata_errors) ---
+import wave  # noqa: E402
+import numpy as np  # noqa: E402
+
+with tempfile.TemporaryDirectory() as wav_td:
+    test_wav = Path(wav_td) / "sample.wav"
+    pcm = np.array([0, 16384, -16384, 32767], dtype="<i2")
+    with wave.open(str(test_wav), "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(pcm.tobytes())
+    samples = analyzer._load_pcm_wav_float32(test_wav)
+    assert isinstance(samples, np.ndarray) and samples.dtype == np.float32
+    assert len(samples) == 4 and abs(float(samples[1]) - 0.5) < 1e-4
+
+    seen_audio = []
+
+    class _FakeWhisperModel:
+        def transcribe(self, audio, **_kwargs):
+            seen_audio.append(audio)
+            return [], None
+
+    orig_extract = analyzer._extract_audio
+    orig_get_whisper = analyzer._get_local_whisper
+    try:
+        def _fake_extract(_video_path, _args, out_path):
+            out_path.write_bytes(test_wav.read_bytes())
+
+        analyzer._extract_audio = _fake_extract
+        analyzer._get_local_whisper = lambda _name: _FakeWhisperModel()
+        analyzer.transcribe_with_local_whisper(Path(wav_td) / "fake.mp4", "tiny")
+    finally:
+        analyzer._extract_audio = orig_extract
+        analyzer._get_local_whisper = orig_get_whisper
+    assert len(seen_audio) == 1 and isinstance(seen_audio[0], np.ndarray)
+    assert seen_audio[0].dtype == np.float32 and len(seen_audio[0]) == 4
+print("local whisper float32 ndarray decoding OK")
 
 print("ALL SMOKE TESTS PASSED")
