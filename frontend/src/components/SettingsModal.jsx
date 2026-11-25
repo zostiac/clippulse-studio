@@ -49,6 +49,8 @@ export default function SettingsModal({ open, onClose, settings, onUpdated }) {
   const [provider, setProvider] = useState("local_free");
   const [apiKey, setApiKey] = useState("");
   const [aiModel, setAiModel] = useState("");
+  const [transcriptionProvider, setTranscriptionProvider] = useState("auto");
+  const [transcriptionApiKey, setTranscriptionApiKey] = useState("");
   const [enableLocalWhisper, setEnableLocalWhisper] = useState(true);
   const [whisperModel, setWhisperModel] = useState("tiny");
   const [captionStyle, setCaptionStyle] = useState("hormozi");
@@ -62,6 +64,8 @@ export default function SettingsModal({ open, onClose, settings, onUpdated }) {
     if (open && settings) {
       setProvider(settings.ai_provider || "local_free");
       setAiModel(settings.ai_model || "");
+      setTranscriptionProvider(settings.transcription_provider || "auto");
+      setTranscriptionApiKey("");
       setEnableLocalWhisper(settings.enable_local_whisper !== false);
       setWhisperModel(settings.whisper_model || "tiny");
       setCaptionStyle(settings.default_caption_style || "hormozi");
@@ -84,6 +88,7 @@ export default function SettingsModal({ open, onClose, settings, onUpdated }) {
       const payload = {
         ai_provider: provider,
         ai_model: aiModel.trim() || activeProv.defaultModel,
+        transcription_provider: transcriptionProvider,
         enable_local_whisper: enableLocalWhisper,
         whisper_model: whisperModel,
         default_caption_style: captionStyle,
@@ -92,10 +97,32 @@ export default function SettingsModal({ open, onClose, settings, onUpdated }) {
       if (apiKey.trim()) {
         payload.api_key = apiKey.trim();
       }
+      if (transcriptionApiKey.trim()) {
+        payload.transcription_api_key = transcriptionApiKey.trim();
+      }
       const updated = await api.updateSettings(payload);
       onUpdated(updated);
       setApiKey("");
+      setTranscriptionApiKey("");
       setMsg("Free AI & studio settings saved.");
+    } catch (ex) {
+      setErr(ex.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleClearTranscriptionKey() {
+    setSaving(true);
+    try {
+      const updated = await api.updateSettings({
+        transcription_provider: "auto",
+        transcription_api_key: "",
+      });
+      onUpdated(updated);
+      setTranscriptionProvider("auto");
+      setTranscriptionApiKey("");
+      setMsg("Dedicated transcription key cleared.");
     } catch (ex) {
       setErr(ex.message);
     } finally {
@@ -289,6 +316,67 @@ export default function SettingsModal({ open, onClose, settings, onUpdated }) {
                 </div>
               </div>
             )}
+
+            {/* Dedicated Cloud Transcription Override (e.g. Groq Whisper + Gemini LLM) */}
+            <div className="p-3.5 rounded-xl bg-[#0A0B0F] border border-white/10 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-semibold text-white">
+                    Cloud Speech-to-Text (Optional — combine Groq Whisper + Gemini)
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Use a fast cloud Whisper provider for transcription while keeping Gemini/OpenRouter for clip detection.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {settings?.has_transcription_api_key && (
+                    <>
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300">
+                        {settings.transcription_api_key_preview}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleClearTranscriptionKey}
+                        className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3 h-3" /> Clear
+                      </button>
+                    </>
+                  )}
+                  <select
+                    value={transcriptionProvider}
+                    onChange={(e) => setTranscriptionProvider(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg bg-[#12141D] border border-white/10 text-xs text-white"
+                  >
+                    <option value="auto">Auto (Match AI Provider)</option>
+                    <option value="groq">Groq Whisper (Free &amp; Fast)</option>
+                    <option value="openai">OpenAI Whisper</option>
+                    <option value="local">Local Whisper Only</option>
+                  </select>
+                </div>
+              </div>
+              {(transcriptionProvider === "groq" || transcriptionProvider === "openai") && (
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-400 mb-1 flex items-center gap-1">
+                    <Key className="w-3 h-3 text-cyan-400" />
+                    {transcriptionProvider === "groq" ? "Groq" : "OpenAI"} Transcription API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={transcriptionApiKey}
+                    onChange={(e) => setTranscriptionApiKey(e.target.value)}
+                    placeholder={
+                      settings?.has_transcription_api_key
+                        ? "Saved (enter new key to replace)..."
+                        : transcriptionProvider === "groq"
+                        ? "gsk_..."
+                        : "sk-..."
+                    }
+                    className="w-full px-3 py-2 rounded-lg bg-[#12141D] border border-white/10 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500"
+                  />
+                </div>
+              )}
+            </div>
 
             {/* Local Whisper Fallback Option */}
             <div className="p-3 rounded-xl bg-[#0A0B0F] border border-white/10 flex flex-wrap items-center justify-between gap-3">
