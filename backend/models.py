@@ -151,12 +151,15 @@ class Project(BaseModel):
 
 
 AIProvider = Literal["local_free", "groq", "gemini", "openrouter", "openai"]
+TranscriptionProvider = Literal["auto", "groq", "openai", "local"]
 
 
 class AppSettings(BaseModel):
     ai_provider: AIProvider = "local_free"
     api_key: str = ""
     ai_model: str = ""
+    transcription_provider: TranscriptionProvider = "auto"
+    transcription_api_key: str = ""
     enable_local_whisper: bool = True
     whisper_model: Literal["tiny", "base"] = "tiny"
     # Legacy alias support

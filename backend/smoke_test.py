@@ -395,4 +395,48 @@ with tempfile.TemporaryDirectory() as wav_td:
     assert seen_audio[0].dtype == np.float32 and len(seen_audio[0]) == 4
 print("local whisper float32 ndarray decoding OK")
 
+# --- hybrid providers: Groq Whisper transcription + Gemini LLM clip detection ---
+hybrid_calls = []
+
+
+def _fake_cloud_whisper(_video_path, key, provider):
+    hybrid_calls.append(("whisper", provider, key))
+    return [TranscriptSegment(start=0.0, end=5.0, text="Hello viral world")]
+
+
+def _fake_llm_clips(project_id, _title, _duration, _transcript, settings):
+    hybrid_calls.append(("llm", settings.ai_provider, settings.api_key))
+    return [Clip(project_id=project_id, title="Gemini clip", start=0.0, end=5.0)]
+
+
+_orig_cw = analyzer.transcribe_with_cloud_whisper
+_orig_llm = analyzer.detect_clips_with_llm
+try:
+    analyzer.transcribe_with_cloud_whisper = _fake_cloud_whisper
+    analyzer.detect_clips_with_llm = _fake_llm_clips
+    tr_h, clips_h, eng_h = analyzer.analyze_project(
+        "proj_hybrid",
+        "Hybrid test",
+        Path(__file__),
+        10.0,
+        [],
+        [],
+        AppSettings(
+            ai_provider="gemini",
+            api_key="AIza_gemini_key",
+            transcription_provider="groq",
+            transcription_api_key="gsk_groq_whisper_key",
+            enable_local_whisper=False,
+        ),
+    )
+    assert len(tr_h) == 1 and len(clips_h) == 1 and eng_h == "gemini_free"
+    assert hybrid_calls == [
+        ("whisper", "groq", "gsk_groq_whisper_key"),
+        ("llm", "gemini", "AIza_gemini_key"),
+    ], hybrid_calls
+finally:
+    analyzer.transcribe_with_cloud_whisper = _orig_cw
+    analyzer.detect_clips_with_llm = _orig_llm
+print("hybrid Groq Whisper + Gemini LLM routing OK")
+
 print("ALL SMOKE TESTS PASSED")

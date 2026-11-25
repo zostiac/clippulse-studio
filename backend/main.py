@@ -304,6 +304,8 @@ class SettingsUpdate(BaseModel):
     ai_provider: Optional[str] = None
     api_key: Optional[str] = Field(default=None, max_length=4096)
     ai_model: Optional[str] = Field(default=None, max_length=200)
+    transcription_provider: Optional[str] = None
+    transcription_api_key: Optional[str] = Field(default=None, max_length=4096)
     enable_local_whisper: Optional[bool] = None
     whisper_model: Optional[str] = None
     openai_api_key: Optional[str] = None
@@ -356,18 +358,25 @@ def health():
     }
 
 
+def _mask_key(key: str) -> str:
+    if not key:
+        return ""
+    return f"{key[:6]}...{key[-4:]}" if len(key) > 12 else "••••"
+
+
 @app.get("/api/settings")
 def get_settings():
     s = load_settings()
     active_key = s.api_key or s.openai_api_key
-    masked = ""
-    if active_key:
-        masked = f"{active_key[:6]}...{active_key[-4:]}" if len(active_key) > 12 else "••••"
+    trans_key = s.transcription_api_key
     return {
         "ai_provider": s.ai_provider,
         "has_api_key": bool(active_key),
-        "api_key_preview": masked,
+        "api_key_preview": _mask_key(active_key),
         "ai_model": s.ai_model,
+        "transcription_provider": s.transcription_provider,
+        "has_transcription_api_key": bool(trans_key),
+        "transcription_api_key_preview": _mask_key(trans_key),
         "enable_local_whisper": s.enable_local_whisper,
         "whisper_model": s.whisper_model,
         "has_openai_key": bool(s.openai_api_key),
@@ -392,6 +401,10 @@ def update_settings(payload: SettingsUpdate):
         s.ai_model = payload.ai_model.strip()
     elif payload.openai_model is not None:
         s.ai_model = payload.openai_model.strip()
+    if payload.transcription_provider in ("auto", "groq", "openai", "local"):
+        s.transcription_provider = payload.transcription_provider  # type: ignore
+    if payload.transcription_api_key is not None:
+        s.transcription_api_key = payload.transcription_api_key.strip()
     if payload.enable_local_whisper is not None:
         s.enable_local_whisper = payload.enable_local_whisper
     if payload.whisper_model in ("tiny", "base"):

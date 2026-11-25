@@ -643,16 +643,29 @@ def analyze_project(
         attempted = False
         failures: List[str] = []
 
-        if api_key and settings.ai_provider in ("groq", "openai"):
+        cloud_whisper_provider: Optional[str] = None
+        cloud_whisper_key = ""
+        if settings.transcription_provider in ("groq", "openai"):
+            cloud_whisper_provider = settings.transcription_provider
+            cloud_whisper_key = (settings.transcription_api_key or "").strip()
+            if not cloud_whisper_key and settings.ai_provider == cloud_whisper_provider:
+                cloud_whisper_key = api_key
+        elif settings.transcription_provider == "auto" and api_key and settings.ai_provider in ("groq", "openai"):
+            cloud_whisper_provider = settings.ai_provider
+            cloud_whisper_key = api_key
+
+        if cloud_whisper_provider and cloud_whisper_key:
             attempted = True
             try:
-                transcript = transcribe_with_cloud_whisper(video_path, api_key, settings.ai_provider)
+                transcript = transcribe_with_cloud_whisper(
+                    video_path, cloud_whisper_key, cloud_whisper_provider
+                )
                 if transcript:
-                    engine_used = f"{settings.ai_provider}_whisper"
+                    engine_used = f"{cloud_whisper_provider}_whisper"
                 else:
-                    failures.append(f"{settings.ai_provider} Whisper returned no segments")
+                    failures.append(f"{cloud_whisper_provider} Whisper returned no segments")
             except Exception as exc:
-                failures.append(f"{settings.ai_provider} Whisper failed: {exc}")
+                failures.append(f"{cloud_whisper_provider} Whisper failed: {exc}")
                 transcript = []
 
         if not transcript and settings.enable_local_whisper:
