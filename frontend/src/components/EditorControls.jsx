@@ -37,7 +37,7 @@ export default function EditorControls({ clip, onUpdateStyle, onUpdateTitle }) {
   const set = (patch) => onUpdateStyle({ ...style, ...patch });
 
   return (
-    <div className="space-y-6">
+    <div className="cp-editor-controls space-y-6">
       {/* Clip Title */}
       <div className="space-y-1.5">
         <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">

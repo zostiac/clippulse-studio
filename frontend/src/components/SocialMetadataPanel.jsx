@@ -26,7 +26,7 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
   const update = (patch) => onUpdateMeta({ ...meta, ...patch });
 
   return (
-    <div className="space-y-4">
+    <div className="cp-social-panel space-y-4">
       {copyError && (
         <p role="alert" className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200">
           {copyError}

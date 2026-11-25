@@ -325,7 +325,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#0A0B0F] text-slate-100">
+    <div className="cp-app-shell h-screen w-screen overflow-hidden flex flex-col bg-[#0A0B0F] text-slate-100">
       <HeaderBar
         project={activeProject}
         settings={settings}
@@ -393,7 +393,7 @@ export default function App() {
           />
 
           {/* Right: 3-Tab Inspector */}
-          <aside className="w-full lg:w-[340px] xl:w-[370px] shrink-0 min-h-[380px] lg:min-h-0 border-l border-white/10 bg-[#0E1017] flex flex-col min-h-0">
+          <aside className="cp-inspector w-full lg:w-[340px] xl:w-[370px] shrink-0 min-h-[380px] lg:min-h-0 border-l border-white/10 bg-[#0E1017] flex flex-col min-h-0">
             <div className="grid grid-cols-3 border-b border-white/10 bg-[#0B0D13]">
               {[
                 { id: "style", label: "Style", Icon: Sliders },

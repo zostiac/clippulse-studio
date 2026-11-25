@@ -97,10 +97,10 @@ export default function IngestView({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-8 sm:py-12">
-      <div className="max-w-5xl mx-auto space-y-10">
+    <div className="cp-dashboard flex-1 overflow-y-auto px-4 py-8 sm:py-12">
+      <div className="cp-dashboard-content max-w-6xl mx-auto space-y-10">
         {/* Hero */}
-        <div className="text-center space-y-3 max-w-2xl mx-auto">
+        <div className="cp-dashboard-hero text-center space-y-3 max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs font-medium">
             <Sparkles className="w-3.5 h-3.5" />
             <span>100% Free • Local Whisper AI + Optional Groq / Gemini Free Tier</span>
@@ -117,7 +117,7 @@ export default function IngestView({
         </div>
 
         {/* Ingestion Card */}
-        <div className="bg-[#12141D] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="cp-ingest-card bg-[#12141D] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
           {/* Tabs */}
           <div className="flex border-b border-white/10 bg-[#0E1017]">
             <button
@@ -454,7 +454,7 @@ export default function IngestView({
 
         {/* Recent Projects */}
         {projects.length > 0 && (
-          <div className="space-y-4">
+          <div className="cp-projects-section space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
                 Recent Studio Projects ({projects.length})
@@ -475,9 +475,9 @@ export default function IngestView({
                       onOpenProject(p.id);
                     }
                   }}
-                  className="group cursor-pointer rounded-xl bg-[#12141D] border border-white/10 hover:border-violet-500/50 focus-visible:border-violet-400 overflow-hidden transition flex flex-col"
+                  className="cp-project-card group cursor-pointer rounded-xl bg-[#12141D] border border-white/10 hover:border-violet-500/50 focus-visible:border-violet-400 overflow-hidden transition flex flex-col"
                 >
-                  <div className="aspect-video bg-[#0A0B0F] relative overflow-hidden">
+                  <div className="cp-project-thumb aspect-video bg-[#0A0B0F] relative overflow-hidden">
                     {p.thumbnail_url ? (
                       <img
                         src={p.thumbnail_url}
