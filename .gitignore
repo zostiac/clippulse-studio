@@ -57,3 +57,5 @@ htmlcov/
 # Temporary
 *.tmp
 *.temp
+# Local static ffmpeg/ffprobe binaries (testing only)
+/.bin/

@@ -428,6 +428,8 @@ def _parse_llm_clips_json(
         return None
     clips: List[Clip] = []
     for item in items:
+        if len(clips) >= settings.max_clips:
+            break
         st = max(0.0, float(item.get("start", 0.0)))
         en = min(duration, float(item.get("end", st + 20.0)))
         if en - st < 6.0:
@@ -628,7 +630,7 @@ def detect_clips_heuristic(
                     platform_meta=_build_platform_meta(title, full_text, hook_banner),
                 )
             )
-            if len(clips) >= 5:
+            if len(clips) >= settings.max_clips:
                 break
     else:
         win = min(30.0, max(10.0, duration * 0.35))
@@ -636,14 +638,14 @@ def detect_clips_heuristic(
         t = 0.0
         idx = 1
         windows = []
-        while t + min(8.0, duration * 0.25) < duration and len(windows) < 6:
+        while t + min(8.0, duration * 0.25) < duration and len(windows) < max(2, settings.max_clips):
             en = min(duration, t + win)
             avg_e, peak_e = _energy_in_range(energy_peaks, t, en, duration)
             sc = int(min(95, max(68, 68 + avg_e * 18 + peak_e * 10)))
             windows.append((sc, t, en, avg_e, peak_e))
             t += step
         windows.sort(key=lambda x: x[0], reverse=True)
-        for sc, st, en, avg_e, peak_e in windows[:4]:
+        for sc, st, en, avg_e, peak_e in windows[: settings.max_clips]:
             title = f"High-Energy Segment #{idx}"
             hook = f"HIGHLIGHT MOMENT #{idx}"
             clips.append(
@@ -682,12 +684,13 @@ def analyze_project(
     transcript: List[TranscriptSegment],
     energy_peaks: List[float],
     settings: AppSettings,
+    skip_transcription: bool = False,
 ) -> Tuple[List[TranscriptSegment], List[Clip], str]:
     engine_used = "local_free"
     api_key = (settings.api_key or settings.openai_api_key or "").strip()
 
     # 1. Free or cloud transcription if no subtitles exist yet
-    if not transcript:
+    if not transcript and not skip_transcription:
         attempted = False
         failures: List[str] = []
 
