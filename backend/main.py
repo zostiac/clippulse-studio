@@ -1106,7 +1106,13 @@ if FRONTEND_DIST.exists():
         # Don't serve SPA for API routes — return 404 for unknown API endpoints
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="API endpoint not found")
-        candidate = FRONTEND_DIST / full_path
-        if full_path and candidate.exists() and candidate.is_file():
+        dist_root = FRONTEND_DIST.resolve()
+        candidate = (FRONTEND_DIST / full_path).resolve()
+        if (
+            full_path
+            and candidate.is_relative_to(dist_root)
+            and candidate.exists()
+            and candidate.is_file()
+        ):
             return FileResponse(candidate)
         return FileResponse(FRONTEND_DIST / "index.html")

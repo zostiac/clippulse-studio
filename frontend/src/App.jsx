@@ -42,9 +42,10 @@ export default function App() {
   // Poll only while exports are active; preserve optimistic edits that have not
   // reached the backend yet and ignore responses for a project that is no longer open.
   const hasRendering = activeProject?.clips?.some((c) => c.export_status === "rendering");
+  const activeProjectId = activeProject?.id || null;
   useEffect(() => {
-    if (!activeProject || !hasRendering) return;
-    const projectId = activeProject.id;
+    if (!activeProjectId || !hasRendering) return;
+    const projectId = activeProjectId;
     const timer = setInterval(async () => {
       try {
         const fresh = await api.getProject(projectId);
@@ -62,7 +63,7 @@ export default function App() {
       }
     }, 1400);
     return () => clearInterval(timer);
-  }, [activeProject?.id, hasRendering]);
+  }, [activeProjectId, hasRendering]);
 
   useEffect(() => () => {
     for (const queued of patchTimerRef.current.values()) clearTimeout(queued.timer);
