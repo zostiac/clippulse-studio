@@ -1,11 +1,19 @@
 from __future__ import annotations
 
-import shlex
+import logging
+import re
 import subprocess
+import threading
 from pathlib import Path
 from typing import Callable, List, Optional
 
 from models import Clip, EXPORTS_DIR, TranscriptSegment, WordTiming
+
+logger = logging.getLogger(__name__)
+
+# Ids end up in file names and in the ffmpeg command line, so only allow a
+# conservative character set.
+_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def _fmt_ass_time(sec: float) -> str:
@@ -17,7 +25,13 @@ def _fmt_ass_time(sec: float) -> str:
 
 
 def _esc_ass(txt: str) -> str:
-    return txt.replace("\\", "").replace("{", "(").replace("}", ")").replace("\n", "\\N")
+    return (
+        txt.replace("\\", "")
+        .replace("{", "(")
+        .replace("}", ")")
+        .replace("\r", "")
+        .replace("\n", "\\N")
+    )
 
 
 def _collect_clip_words(transcript: List[TranscriptSegment], start: float, end: float) -> List[WordTiming]:
@@ -180,9 +194,40 @@ def export_clip_mp4(
     else:
         out_w, out_h = 1080, 1920
 
+    if not _SAFE_ID_RE.match(clip.id) or not _SAFE_ID_RE.match(clip.project_id):
+        raise ValueError("Clip or project id contains unsupported characters.")
+
     out_name = f"{clip.project_id}_{clip.id}_{clip.style.layout}.mp4"
-    out_path = EXPORTS_DIR / out_name
-    ass_path = EXPORTS_DIR / f"{clip.id}.ass"
+    out_path = (EXPORTS_DIR / out_name).resolve()
+    ass_name = f"{clip.id}.ass"
+    ass_path = EXPORTS_DIR / ass_name
+
+    try:
+        return _render(clip, video_path, src_w, src_h, transcript, on_progress, out_w, out_h, out_path, ass_name, ass_path)
+    finally:
+        ass_path.unlink(missing_ok=True)
+
+
+def _render(
+    clip: Clip,
+    video_path: Path,
+    src_w: int,
+    src_h: int,
+    transcript: List[TranscriptSegment],
+    on_progress: Optional[Callable[[int], None]],
+    out_w: int,
+    out_h: int,
+    out_path: Path,
+    ass_name: str,
+    ass_path: Path,
+) -> Path:
+    def progress(pct: int) -> None:
+        if on_progress is None:
+            return
+        try:
+            on_progress(pct)
+        except Exception:  # progress reporting must never abort a render
+            logger.exception("Export progress callback failed")
 
     has_ass = build_ass_subtitles(clip, transcript, ass_path, out_w, out_h)
 
@@ -191,16 +236,12 @@ def export_clip_mp4(
 
     # Build base video filter graph outputting [vbase] at out_w x out_h
     if layout == "blur_fill":
-        fg_h = int(round(out_w * (src_h / max(1, src_w))))
-        if fg_h % 2 == 1:
-            fg_h += 1
-        if fg_h > out_h:
-            fg_h = out_h
         filter_graph = (
             f"[0:v]split=2[bg][fg];"
             f"[bg]scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"
             f"crop={out_w}:{out_h},boxblur=26:2,eq=brightness=-0.16[bg_b];"
-            f"[fg]scale={out_w}:-2:force_original_aspect_ratio=decrease[fg_s];"
+            # Fit the whole frame inside the canvas (also for portrait sources)
+            f"[fg]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease:force_divisible_by=2[fg_s];"
             f"[bg_b][fg_s]overlay=(W-w)/2:(H-h)/2[vbase]"
         )
     elif layout == "split_screen":
@@ -247,25 +288,27 @@ def export_clip_mp4(
             )
 
     if has_ass:
-        # Use shlex.quote to safely escape the path for filtergraph interpolation
-        safe_ass = shlex.quote(str(ass_path))
-        filter_graph += f";[vbase]ass='{safe_ass}'[vout]"
+        # ffmpeg runs with cwd=EXPORTS_DIR and the file name is restricted to
+        # [A-Za-z0-9_.-], so no filtergraph escaping is needed. (No shell is
+        # involved, so shell quoting would only corrupt the value.)
+        filter_graph += f";[vbase]ass={ass_name}[vout]"
     else:
         filter_graph += ";[vbase]null[vout]"
 
     clip_dur = max(0.5, clip.end - clip.start)
-    if on_progress:
-        on_progress(15)
+    progress(15)
 
     cmd = [
         "ffmpeg",
         "-y",
+        "-loglevel",
+        "error",
         "-ss",
         f"{clip.start:.3f}",
         "-t",
         f"{clip_dur:.3f}",
         "-i",
-        str(video_path),
+        str(Path(video_path).resolve()),
         "-filter_complex",
         filter_graph,
         "-map",
@@ -292,22 +335,40 @@ def export_clip_mp4(
         str(out_path),
     ]
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    assert proc.stdout is not None
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=str(EXPORTS_DIR),
+    )
+    assert proc.stdout is not None and proc.stderr is not None
+
+    # Drain stderr concurrently: if only stdout is read, ffmpeg can block on a
+    # full stderr pipe and the export hangs forever.
+    stderr_chunks: List[str] = []
+
+    def _drain_stderr() -> None:
+        for chunk in proc.stderr:  # type: ignore[union-attr]
+            stderr_chunks.append(chunk)
+
+    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    stderr_thread.start()
+
     for line in proc.stdout:
         line = line.strip()
         if line.startswith("out_time_us="):
             try:
                 us = int(line.split("=", 1)[1])
                 pct = min(96, max(18, int(18 + (us / (clip_dur * 1_000_000)) * 78)))
-                if on_progress:
-                    on_progress(pct)
+                progress(pct)
             except ValueError:
                 pass
-    stderr_txt = proc.stderr.read() if proc.stderr else ""
     ret = proc.wait()
+    stderr_thread.join(timeout=5)
+    stderr_txt = "".join(stderr_chunks)
     if ret != 0 or not out_path.exists():
+        out_path.unlink(missing_ok=True)
         raise RuntimeError(f"FFmpeg export failed: {stderr_txt[-500:]}")
-    if on_progress:
-        on_progress(100)
+    progress(100)
     return out_path

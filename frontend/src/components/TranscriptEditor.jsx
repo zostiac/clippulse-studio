@@ -25,6 +25,7 @@ export default function TranscriptEditor({
   const [segments, setSegments] = useState(project.transcript || []);
   const [dirty, setDirty] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
     setSegments(project.transcript || []);
@@ -43,7 +44,14 @@ export default function TranscriptEditor({
   }
 
   async function handleSave() {
-    await onSaveTranscript(segments);
+    setSaveError("");
+    try {
+      await onSaveTranscript(segments);
+    } catch (e) {
+      // Keep the edits and the Save button so the user can retry
+      setSaveError(e?.message || "Could not save captions.");
+      return;
+    }
     setDirty(false);
     setSavedToast(true);
     setTimeout(() => setSavedToast(false), 1800);
@@ -101,6 +109,12 @@ export default function TranscriptEditor({
           </button>
         )}
       </div>
+
+      {saveError && (
+        <div role="alert" className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-200">
+          {saveError}
+        </div>
+      )}
 
       {segments.length === 0 ? (
         <div className="p-4 rounded-xl bg-[#0A0B0F] border border-white/10 text-xs text-slate-400 leading-relaxed">

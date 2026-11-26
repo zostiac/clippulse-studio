@@ -28,7 +28,7 @@ AI-powered long-form YouTube & video clipping platform that turns podcasts, keyn
 ### Quick Start
 ```bash
 # 1. Clone & enter
-cd clippulse
+git clone https://github.com/zostiac/clippulse-studio && cd clippulse-studio
 
 # 2. Backend dependencies
 cd backend
@@ -43,7 +43,7 @@ npm run build
 
 # 4. Start unified FastAPI server on port 8000
 cd ../backend
-uvicorn main:app --host 0.0.0.0 --port 8000
+uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
 Open **http://localhost:8000** — the API serves the built React app automatically.
@@ -64,13 +64,15 @@ Then open **http://localhost:5173**.
 
 ## Project Structure
 ```
-clippulse/
+clippulse-studio/
 ├── backend/
 │   ├── main.py           # FastAPI app — all REST endpoints
 │   ├── models.py         # Pydantic models + file-based storage
 │   ├── analyzer.py       # Transcription + viral clip detection (heuristic + LLM)
 │   ├── ingest.py         # YouTube download (yt-dlp), subtitle parsing, demo generator
 │   ├── exporter.py       # FFmpeg + libass MP4 export (3 layouts, 4 caption styles)
+│   ├── mediautil.py      # Range-header parsing + safe path joining (unit-tested)
+│   ├── tests/            # pytest suite (`pytest backend/tests`)
 │   └── requirements.txt  # Python deps (pinned)
 ├── frontend/
 │   ├── src/
@@ -115,10 +117,15 @@ clippulse/
 
 ### Environment Variables (Optional)
 ```bash
-# Backend .env (create if needed)
-CLIPPULSE_DATA_DIR=./data          # Override data directory
-CLIPPULSE_FFMPEG_PATH=ffmpeg       # Custom ffmpeg binary path
+CLIPPULSE_DATA_DIR=./data          # Where projects, exports and settings are stored
+CLIPPULSE_MAX_UPLOAD_MB=4096       # Upload size cap in MB (0 = unlimited)
+CLIPPULSE_CORS_ORIGINS=            # Comma-separated extra origins allowed to call the API
+                                   # (default: only http://localhost / 127.0.0.1 pages)
 ```
+
+> **Security note:** the API has no authentication. Keep it bound to `127.0.0.1`
+> (as in the commands above) unless you put it behind your own auth/reverse proxy;
+> binding to `0.0.0.0` exposes your projects, settings and uploads to your network.
 
 ---
 
@@ -152,21 +159,19 @@ CLIPPULSE_FFMPEG_PATH=ffmpeg       # Custom ffmpeg binary path
 
 ## Code Review — Known Issues & Fixes
 
-> **Status**: This project was reviewed for security, correctness, and maintainability. See `CODE_REVIEW.md` for full details.
+> See `CODE_REVIEW.md` for the original review. A follow-up pass fixed these on top of it:
 
-### Critical (Fixed in this version)
-- **C1**: Path traversal in `/media/projects/{project_id}/{filename}` — sanitized both `project_id` and `filename` with `Path(...).name`
-- **C2**: Shell injection via ASS filter path — used `shlex.quote()` for filtergraph interpolation
-- **C4**: Export race condition — wrapped `_run_export_job` with global `_store_lock`
+- **Exports hung forever**: the export job held the (non-reentrant) store lock and then called `save_project`, which locks again, so the first progress update deadlocked. The lock is now re-entrant and all project writes go through `mutate_project`.
+- **Arbitrary file read via the SPA fallback**: `GET /<path>` joined the URL path onto the `dist` folder without checking containment (`..` segments could reach `data/settings.json`, which holds API keys). Paths are now resolved and verified.
+- **Project deletion by id `..`**: `DELETE /api/projects/..` could `rmtree` the whole data directory. Project ids are now validated (`proj_<8 hex>`) everywhere they touch the filesystem.
+- **FFmpeg subtitle path**: the `.ass` path was interpolated into the filtergraph wrapped in `shlex.quote` (meaningless without a shell). Any `:` or `'` in the data path, such as every Windows `C:\` install, made FFmpeg reject the filter. FFmpeg now runs inside the exports directory with a validated relative file name.
+- **YouTube URL check** only looked for the substring `youtube.com`, so `http://internal-host/?youtube.com` was passed to yt-dlp. Hosts are now parsed and checked.
+- **Event loop blocked** by uploads: ffprobe/Whisper/FFmpeg ran inside an `async def`. They now run in a worker thread; uploads also have a size cap.
+- **Lost edits**: queued edits were overwritten by newer ones or by the render poll; they are now merged per clip, and the poll only copies export fields.
+- **30 s client timeout** aborted every long ingest/analysis request; those calls now get a 30-minute budget.
+- Plus: stale `rendering` clips are reset on startup, duplicate export requests are ignored, silently-failed transcription is reported to the UI, API keys are stored with `0600` permissions, CORS defaults to localhost origins, malformed LLM output no longer discards all clips, long transcripts are chunked for LLM analysis, and the Gemini key moved from the URL into a header.
 
-### High Priority (Recommended)
-- **H1**: ASS path injection — addressed via `shlex.quote()`
-- **H2**: Silent transcription failure — now raises explicit error surfaced to UI
-- **H3**: Demo video duplication — use symlink or serve from demo dir
-- **H5**: SPA fallback masks 404s — added `/api` exclusion
-
-### Medium Priority (Backlog)
-- **M1–M10**: Code organization, testability, timeouts, pinned deps, error boundaries — see `CODE_REVIEW.md`
+Still open: MIME-sniffing of uploads, rate limiting, and the maintainability items (M1, M2, M9, M10) in `CODE_REVIEW.md`.
 
 ---
 
@@ -189,7 +194,7 @@ MIT — Free for personal and commercial use.
 ## Contributing
 1. Fork → branch → PR
 2. Run `ruff check backend/` and `npm run lint` (if configured) before committing
-3. Add tests for new heuristic scoring logic
+3. Run `pytest backend/tests` and add tests for new logic
 
 ---
 

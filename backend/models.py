@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Callable, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
+# CLIPPULSE_DATA_DIR relocates all runtime data (projects, exports, settings)
+DATA_DIR = Path(os.environ.get("CLIPPULSE_DATA_DIR") or (BASE_DIR / "data")).expanduser().resolve()
 PROJECTS_DIR = DATA_DIR / "projects"
 DEMOS_DIR = DATA_DIR / "demos"
 EXPORTS_DIR = DATA_DIR / "exports"
@@ -122,11 +125,31 @@ class AppSettings(BaseModel):
     default_layout: Literal["center_crop", "blur_fill", "split_screen"] = "center_crop"
 
 
-_store_lock = threading.Lock()
+# Re-entrant on purpose: callers hold the lock across a load -> modify -> save
+# cycle, and ``save_project`` takes the same lock again. A plain ``Lock`` would
+# deadlock the calling thread on its own second acquire.
+_store_lock = threading.RLock()
+
+_PROJECT_ID_RE = re.compile(r"^proj_[0-9a-f]{8}$")
+
+
+def is_valid_project_id(project_id: str) -> bool:
+    """Project ids are generated server-side as ``proj_<8 hex>``.
+
+    Anything else (``..``, absolute paths, separators) must never be joined onto
+    PROJECTS_DIR: ``delete_project("..")`` would otherwise rmtree the data dir.
+    """
+    return bool(_PROJECT_ID_RE.match(project_id or ""))
+
+
+def _project_dir_path(project_id: str) -> Path:
+    if not is_valid_project_id(project_id):
+        raise ValueError(f"Invalid project id: {project_id!r}")
+    return PROJECTS_DIR / project_id
 
 
 def get_project_dir(project_id: str) -> Path:
-    d = PROJECTS_DIR / project_id
+    d = _project_dir_path(project_id)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -141,6 +164,8 @@ def save_project(project: Project) -> None:
 
 
 def load_project(project_id: str) -> Optional[Project]:
+    if not is_valid_project_id(project_id):
+        return None
     meta_path = PROJECTS_DIR / project_id / "project.json"
     if not meta_path.exists():
         return None
@@ -148,6 +173,22 @@ def load_project(project_id: str) -> Optional[Project]:
         return Project.model_validate_json(meta_path.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def mutate_project(project_id: str, fn: Callable[[Project], None]) -> Optional[Project]:
+    """Atomically load a project, apply ``fn`` to it and save it.
+
+    Serialises concurrent writers (API handlers and export threads) so that one
+    cannot overwrite another's changes with a stale copy. Returns the saved
+    project, or ``None`` if it does not exist.
+    """
+    with _store_lock:
+        proj = load_project(project_id)
+        if proj is None:
+            return None
+        fn(proj)
+        save_project(proj)
+        return proj
 
 
 def list_projects() -> List[Project]:
@@ -164,11 +205,13 @@ def list_projects() -> List[Project]:
 
 
 def delete_project(project_id: str) -> bool:
-    import shutil
-    pdir = PROJECTS_DIR / project_id
-    if pdir.exists():
-        shutil.rmtree(pdir, ignore_errors=True)
-        return True
+    if not is_valid_project_id(project_id):
+        return False
+    with _store_lock:
+        pdir = PROJECTS_DIR / project_id
+        if pdir.exists():
+            shutil.rmtree(pdir, ignore_errors=True)
+            return True
     return False
 
 
@@ -188,7 +231,24 @@ def load_settings() -> AppSettings:
     return AppSettings(has_youtube_cookies=COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10)
 
 
+def _write_private(path: Path, text: str) -> None:
+    """Atomically write ``text`` to ``path`` readable only by the current user.
+
+    settings.json holds API keys and the cookies file holds session cookies.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
 def save_settings(settings: AppSettings) -> AppSettings:
     with _store_lock:
-        SETTINGS_FILE.write_text(settings.model_dump_json(indent=2), encoding="utf-8")
+        _write_private(SETTINGS_FILE, settings.model_dump_json(indent=2))
     return load_settings()
+
+
+def save_cookies(text: str) -> None:
+    with _store_lock:
+        _write_private(COOKIES_FILE, text)

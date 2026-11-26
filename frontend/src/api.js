@@ -1,18 +1,51 @@
-async function req(url, options = {}) {
+const DEFAULT_TIMEOUT_MS = 30_000;
+// Ingest/analysis can run for minutes (yt-dlp download, Whisper, FFmpeg), so
+// those calls get a much longer budget than ordinary reads and writes.
+const LONG_TIMEOUT_MS = 30 * 60_000;
+
+function errorMessage(data, status) {
+  const detail = data && typeof data === "object" ? data.detail : undefined;
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail) && detail.length) {
+    // FastAPI validation errors: [{ loc, msg, type }, ...]
+    return detail
+      .map((d) => (d && d.msg ? `${(d.loc || []).slice(1).join(".") || "request"}: ${d.msg}` : String(d)))
+      .join("; ");
+  }
+  return `Request failed (${status})`;
+}
+
+async function req(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     const contentType = res.headers.get("content-type") || "";
-    const isJson = contentType.includes("application/json");
-    const data = isJson ? await res.json() : await res.text();
+    const raw = await res.text();
+    let data = raw;
+    if (contentType.includes("application/json") && raw) {
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = raw;
+      }
+    }
     if (!res.ok) {
-      const err = new Error((data && data.detail) || `Request failed (${res.status})`);
+      const err = new Error(errorMessage(data, res.status));
       err.status = res.status;
       err.data = data;
       throw err;
     }
     return data;
+  } catch (e) {
+    if (e && e.name === "AbortError") {
+      const err = new Error(
+        `The request timed out after ${Math.round(timeoutMs / 1000)}s. The server may still be working on it, so check your project list before retrying.`
+      );
+      err.timeout = true;
+      throw err;
+    }
+    throw e;
   } finally {
     clearTimeout(timeout);
   }
@@ -39,27 +72,39 @@ export const api = {
   deleteProject: (id) => req(`/api/projects/${id}`, { method: "DELETE" }),
 
   createDemo: (demo_key) =>
-    req("/api/projects/demo", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ demo_key }),
-    }),
+    req(
+      "/api/projects/demo",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demo_key }),
+      },
+      LONG_TIMEOUT_MS
+    ),
 
   createFromYoutube: (url, fallback_transcript = "") =>
-    req("/api/projects/youtube", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, fallback_transcript }),
-    }),
+    req(
+      "/api/projects/youtube",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, fallback_transcript }),
+      },
+      LONG_TIMEOUT_MS
+    ),
 
   uploadVideo: (formData) =>
-    req("/api/projects/upload", {
-      method: "POST",
-      body: formData,
-    }),
+    req(
+      "/api/projects/upload",
+      {
+        method: "POST",
+        body: formData,
+      },
+      LONG_TIMEOUT_MS
+    ),
 
   reanalyzeProject: (id) =>
-    req(`/api/projects/${id}/reanalyze`, { method: "POST" }),
+    req(`/api/projects/${id}/reanalyze`, { method: "POST" }, LONG_TIMEOUT_MS),
 
   updateTranscript: (id, segments) =>
     req(`/api/projects/${id}/transcript`, {

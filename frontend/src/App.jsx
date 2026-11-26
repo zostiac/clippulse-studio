@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Sliders, FileText, Share2 } from "lucide-react";
+import { Sliders, FileText, Share2, X } from "lucide-react";
 import { api } from "./api";
 import HeaderBar from "./components/HeaderBar";
 import IngestView from "./components/IngestView";
@@ -10,6 +10,16 @@ import TranscriptEditor from "./components/TranscriptEditor";
 import SocialMetadataPanel from "./components/SocialMetadataPanel";
 import SettingsModal from "./components/SettingsModal";
 
+// Server-owned export fields. While a render is running the poll only copies
+// these, so it can never overwrite edits the user is making locally.
+const EXPORT_FIELDS = [
+  "export_status",
+  "export_progress",
+  "export_url",
+  "export_filename",
+  "export_error",
+];
+
 export default function App() {
   const [settings, setSettings] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -19,9 +29,17 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [reanalyzing, setReanalyzing] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   const seekRef = useRef(null);
   const patchTimerRef = useRef(null);
+  // clipId -> { projId, patch }: edits waiting for the debounce, merged per clip
+  const pendingRef = useRef({});
+
+  const reportError = useCallback((e, fallback) => {
+    console.error(e);
+    setActionError(e?.message || fallback);
+  }, []);
 
   const loadInitial = useCallback(async () => {
     try {
@@ -41,10 +59,24 @@ export default function App() {
   const hasRendering = activeProject?.clips?.some((c) => c.export_status === "rendering");
   useEffect(() => {
     if (!activeProject || !hasRendering) return;
+    const projectId = activeProject.id;
     const timer = setInterval(async () => {
       try {
-        const fresh = await api.getProject(activeProject.id);
-        setActiveProject(fresh);
+        const fresh = await api.getProject(projectId);
+        setActiveProject((prev) => {
+          if (!prev || prev.id !== fresh.id) return prev;
+          const freshById = new Map(fresh.clips.map((c) => [c.id, c]));
+          return {
+            ...prev,
+            clips: prev.clips.map((c) => {
+              const f = freshById.get(c.id);
+              if (!f) return c;
+              const next = { ...c };
+              for (const k of EXPORT_FIELDS) next[k] = f[k];
+              return next;
+            }),
+          };
+        });
       } catch {
         // ignore transient poll err
       }
@@ -64,12 +96,21 @@ export default function App() {
   }
 
   async function handleOpenProject(id) {
-    const proj = await api.getProject(id);
-    openProjectObj(proj);
+    try {
+      const proj = await api.getProject(id);
+      openProjectObj(proj);
+    } catch (e) {
+      reportError(e, "Could not open the project.");
+    }
   }
 
   async function handleDeleteProject(id) {
-    await api.deleteProject(id);
+    try {
+      await api.deleteProject(id);
+    } catch (e) {
+      reportError(e, "Could not delete the project.");
+      return;
+    }
     setProjects((prev) => prev.filter((p) => p.id !== id));
     if (activeProject?.id === id) {
       setActiveProject(null);
@@ -81,6 +122,26 @@ export default function App() {
     setProjects((prev) => [proj, ...prev.filter((p) => p.id !== proj.id)]);
     openProjectObj(proj);
   }
+
+  // Send every queued edit now. Edits are merged per clip, so quickly changing
+  // the style, then the title, then another clip never drops an earlier change.
+  const flushPatches = useCallback(async () => {
+    if (patchTimerRef.current) {
+      clearTimeout(patchTimerRef.current);
+      patchTimerRef.current = null;
+    }
+    const entries = Object.entries(pendingRef.current);
+    pendingRef.current = {};
+    await Promise.all(
+      entries.map(async ([clipId, { projId, patch }]) => {
+        try {
+          await api.updateClip(projId, clipId, patch);
+        } catch (e) {
+          reportError(e, "Your latest changes could not be saved.");
+        }
+      })
+    );
+  }, [reportError]);
 
   // Optimistic local clip update + debounced PATCH
   function patchSelectedClip(patch) {
@@ -106,45 +167,58 @@ export default function App() {
       };
     });
 
+    const queued = pendingRef.current[clipId];
+    pendingRef.current[clipId] = { projId, patch: { ...(queued?.patch || {}), ...patch } };
+
     if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
-    patchTimerRef.current = setTimeout(async () => {
-      try {
-        await api.updateClip(projId, clipId, patch);
-      } catch (e) {
-        console.error("Failed to save clip update:", e);
-      }
-    }, 300);
+    patchTimerRef.current = setTimeout(flushPatches, 300);
   }
 
   async function handleCreateClip(payload) {
     if (!activeProject) return;
-    const created = await api.createClip(activeProject.id, payload);
-    setActiveProject((prev) => ({
-      ...prev,
-      clips: [created, ...prev.clips],
-    }));
-    setSelectedClipId(created.id);
+    try {
+      const created = await api.createClip(activeProject.id, payload);
+      setActiveProject((prev) => (prev ? { ...prev, clips: [created, ...prev.clips] } : prev));
+      setSelectedClipId(created.id);
+    } catch (e) {
+      reportError(e, "Could not create the clip.");
+      throw e; // let the form stay open
+    }
   }
 
   async function handleDeleteClip(clipId) {
     if (!activeProject) return;
-    await api.deleteClip(activeProject.id, clipId);
-    setActiveProject((prev) => {
-      const remaining = prev.clips.filter((c) => c.id !== clipId);
-      if (selectedClipId === clipId) {
-        setSelectedClipId(remaining[0]?.id || null);
-      }
-      return { ...prev, clips: remaining };
-    });
+    try {
+      await api.deleteClip(activeProject.id, clipId);
+    } catch (e) {
+      reportError(e, "Could not delete the clip.");
+      return;
+    }
+    delete pendingRef.current[clipId];
+    if (selectedClip?.id === clipId) {
+      const next = activeProject.clips.find((c) => c.id !== clipId);
+      setSelectedClipId(next?.id || null);
+    }
+    setActiveProject((prev) =>
+      prev ? { ...prev, clips: prev.clips.filter((c) => c.id !== clipId) } : prev
+    );
   }
 
   async function handleReanalyze() {
     if (!activeProject) return;
     setReanalyzing(true);
+    // Re-scanning replaces every clip, so edits still waiting to be sent are moot
+    if (patchTimerRef.current) {
+      clearTimeout(patchTimerRef.current);
+      patchTimerRef.current = null;
+    }
+    pendingRef.current = {};
     try {
       const updated = await api.reanalyzeProject(activeProject.id);
       setActiveProject(updated);
       setSelectedClipId(updated.clips?.[0]?.id || null);
+    } catch (e) {
+      reportError(e, "Re-scan failed.");
     } finally {
       setReanalyzing(false);
     }
@@ -153,33 +227,38 @@ export default function App() {
   async function handleSaveTranscript(segments) {
     if (!activeProject) return;
     const updated = await api.updateTranscript(activeProject.id, segments);
-    setActiveProject(updated);
+    // Only take the transcript: replacing the whole project would discard
+    // clip edits that have not reached the server yet.
+    setActiveProject((prev) =>
+      prev && prev.id === updated.id ? { ...prev, transcript: updated.transcript } : prev
+    );
   }
 
   async function handleExportClip() {
     if (!activeProject || !selectedClip) return;
-    // Flush any pending style/trim edits before starting export
-    if (patchTimerRef.current) {
-      clearTimeout(patchTimerRef.current);
-      await api.updateClip(activeProject.id, selectedClip.id, {
-        title: selectedClip.title,
-        start: selectedClip.start,
-        end: selectedClip.end,
-        style: selectedClip.style,
-        platform_meta: selectedClip.platform_meta,
-      });
+    try {
+      // Make sure the server has every pending style/trim edit before rendering
+      await flushPatches();
+      const updatedClip = await api.exportClip(activeProject.id, selectedClip.id);
+      setActiveProject((prev) =>
+        prev
+          ? { ...prev, clips: prev.clips.map((c) => (c.id === updatedClip.id ? updatedClip : c)) }
+          : prev
+      );
+    } catch (e) {
+      reportError(e, "Export could not be started.");
     }
-    const updatedClip = await api.exportClip(activeProject.id, selectedClip.id);
-    setActiveProject((prev) => ({
-      ...prev,
-      clips: prev.clips.map((c) => (c.id === updatedClip.id ? updatedClip : c)),
-    }));
   }
 
   async function handleExportAll() {
     if (!activeProject) return;
-    const updatedProj = await api.exportAll(activeProject.id);
-    setActiveProject(updatedProj);
+    try {
+      await flushPatches();
+      const updatedProj = await api.exportAll(activeProject.id);
+      setActiveProject(updatedProj);
+    } catch (e) {
+      reportError(e, "Export could not be started.");
+    }
   }
 
   function handleNudgeStart(delta) {
@@ -208,6 +287,23 @@ export default function App() {
         onExportAll={handleExportAll}
         exportingAll={!!hasRendering}
       />
+
+      {actionError && (
+        <div
+          role="alert"
+          className="flex items-start justify-between gap-3 px-4 py-2 text-xs text-rose-200 bg-rose-500/10 border-b border-rose-500/30"
+        >
+          <span className="leading-relaxed">{actionError}</span>
+          <button
+            type="button"
+            onClick={() => setActionError("")}
+            aria-label="Dismiss error"
+            className="shrink-0 p-0.5 rounded hover:bg-white/10 text-rose-200"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {!activeProject ? (
         <IngestView

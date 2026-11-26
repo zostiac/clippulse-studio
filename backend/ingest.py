@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import httpx
 import numpy as np
@@ -19,6 +22,33 @@ from models import (
 )
 
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+_FONT_CANDIDATES = [
+    FONT_BOLD,
+    "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",  # macOS
+    "/Library/Fonts/Arial Bold.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",  # Windows
+]
+
+
+def _font_opt() -> str:
+    """drawtext ``fontfile=...:`` option for the first bold font found, or "" to
+    let ffmpeg/fontconfig pick a default. Keeps demo generation working off Linux."""
+    for cand in _FONT_CANDIDATES:
+        if Path(cand).exists():
+            escaped = cand.replace("\\", "/").replace(":", "\\:")
+            return f"fontfile='{escaped}':"
+    return ""
+
+_YOUTUBE_HOSTS = {
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+    "youtu.be",
+    "www.youtu.be",
+}
 
 
 class YouTubeBlockedError(Exception):
@@ -37,6 +67,55 @@ def extract_youtube_id(url: str) -> Optional[str]:
         if m:
             return m.group(1)
     return None
+
+
+def is_valid_youtube_url(url: str) -> bool:
+    """True only for http(s) links on YouTube hosts that contain a video id.
+
+    A substring check such as ``"youtube.com" in url`` also accepts
+    ``http://internal-host/?youtube.com`` and would let yt-dlp fetch arbitrary URLs.
+    """
+    try:
+        parsed = urlparse((url or "").strip())
+        host = (parsed.hostname or "").lower()
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https") or host not in _YOUTUBE_HOSTS:
+        return False
+    return extract_youtube_id(url) is not None
+
+
+def _looks_like_bot_block(msg: str) -> bool:
+    low = msg.lower()
+    # "\bbot\b" rather than a substring test: "both", "robot", ... are not bot checks
+    return "sign in to confirm" in low or "cookies" in low or re.search(r"\bbot\b", low) is not None
+
+
+def validate_netscape_cookies(text: str) -> bool:
+    """Validate Netscape cookies.txt format: 7 tab-separated fields per cookie line.
+
+    Fields are not stripped, because a cookie with an empty value legitimately
+    ends in a trailing tab. ``#HttpOnly_`` lines are cookies, other ``#`` lines
+    are comments.
+    """
+    cookie_lines = []
+    for raw in text.splitlines():
+        ln = raw.rstrip("\r\n")
+        if not ln.strip():
+            continue
+        if ln.startswith("#") and not ln.startswith("#HttpOnly_"):
+            continue
+        cookie_lines.append(ln)
+    if not cookie_lines:
+        return False
+    for ln in cookie_lines:
+        parts = ln.split("\t")
+        if len(parts) != 7:
+            return False
+        # domain, include-subdomains, path, secure, expiration, name, value
+        if not parts[0].strip() or not parts[5].strip():
+            return False
+    return True
 
 
 def fetch_youtube_oembed(url: str) -> dict:
@@ -246,11 +325,15 @@ def parse_plain_transcript(text: str, duration: float) -> List[TranscriptSegment
         return []
     total_chars = sum(len(s) for s in sentences)
     dur = max(duration, len(sentences) * 2.5)
+    raw_durs = [max(1.4, dur * (len(sent) / max(1, total_chars))) for sent in sentences]
+    # The 1.4s floor can push the total past `dur`; scale down so the last
+    # sentences are not squashed into zero-length segments at the very end.
+    total_raw = sum(raw_durs)
+    scale = dur / total_raw if total_raw > dur else 1.0
     cursor = 0.0
     segs: List[TranscriptSegment] = []
-    for sent in sentences:
-        seg_dur = max(1.4, dur * (len(sent) / max(1, total_chars)))
-        end = min(dur, cursor + seg_dur)
+    for sent, raw_d in zip(sentences, raw_durs):
+        end = min(dur, cursor + raw_d * scale)
         segs.append(
             TranscriptSegment(
                 start=round(cursor, 3),
@@ -288,7 +371,7 @@ def ingest_youtube(url: str, project_dir: Path) -> Tuple[Path, dict, List[Transc
             info = ydl.extract_info(url, download=True)
     except Exception as exc:
         msg = str(exc)
-        if "Sign in to confirm" in msg or "bot" in msg.lower() or "cookies" in msg.lower():
+        if _looks_like_bot_block(msg):
             raise YouTubeBlockedError(
                 "YouTube blocked automated download from this server IP (bot check). Upload your YouTube cookies.txt in Settings, upload an MP4 directly, or launch a Demo Studio Project to test clipping & export immediately.",
                 meta=oembed,
@@ -414,6 +497,7 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
         def esc(s: str) -> str:
             return s.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
+        font_opt = _font_opt()
         left_lbl = esc(cfg["left_speaker"])
         right_lbl = esc(cfg["right_speaker"])
         title_lbl = esc(cfg["title"][:48])
@@ -434,7 +518,7 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
                     f"drawbox=x=660:y=110:w=560:h=430:color=0x22D3EE@0.22:t=fill:enable='between(t,{st},{en})'"
                 )
             seg_filters.append(
-                f"drawtext=fontfile={FONT_BOLD}:text='{short_topic}':fontcolor=white:fontsize=22:"
+                f"drawtext={font_opt}text='{short_topic}':fontcolor=white:fontsize=22:"
                 f"x=(w-text_w)/2:y=612:enable='between(t,{st},{en})'"
             )
 
@@ -442,22 +526,22 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             "drawbox=x=0:y=0:w=1280:h=720:color=0x0D101B:t=fill",
             # Studio header bar
             "drawbox=x=0:y=0:w=1280:h=78:color=0x141829:t=fill",
-            f"drawtext=fontfile={FONT_BOLD}:text='{chan_lbl}':fontcolor=0x22D3EE:fontsize=20:x=60:y=28",
-            f"drawtext=fontfile={FONT_BOLD}:text='{title_lbl}':fontcolor=white:fontsize=22:x=330:y=26",
+            f"drawtext={font_opt}text='{chan_lbl}':fontcolor=0x22D3EE:fontsize=20:x=60:y=28",
+            f"drawtext={font_opt}text='{title_lbl}':fontcolor=white:fontsize=22:x=330:y=26",
             # Left speaker panel
             "drawbox=x=60:y=110:w=560:h=430:color=0x191F36:t=fill",
             "drawbox=x=60:y=110:w=560:h=430:color=0x7C5CFC@0.55:t=3",
             # Stylized speaker silhouette Left
             "drawbox=x=275:y=185:w=130:h=130:color=0x7C5CFC:t=fill",
             "drawbox=x=220:y=335:w=240:h=150:color=0x4C35B5:t=fill",
-            f"drawtext=fontfile={FONT_BOLD}:text='{left_lbl}':fontcolor=white:fontsize=22:x=100:y=135",
+            f"drawtext={font_opt}text='{left_lbl}':fontcolor=white:fontsize=22:x=100:y=135",
             # Right speaker panel
             "drawbox=x=660:y=110:w=560:h=430:color=0x162235:t=fill",
             "drawbox=x=660:y=110:w=560:h=430:color=0x22D3EE@0.55:t=3",
             # Stylized speaker silhouette Right
             "drawbox=x=875:y=185:w=130:h=130:color=0x22D3EE:t=fill",
             "drawbox=x=820:y=335:w=240:h=150:color=0x0E7490:t=fill",
-            f"drawtext=fontfile={FONT_BOLD}:text='{right_lbl}':fontcolor=white:fontsize=22:x=700:y=135",
+            f"drawtext={font_opt}text='{right_lbl}':fontcolor=white:fontsize=22:x=700:y=135",
             # Lower third bar
             "drawbox=x=60:y=580:w=1160:h=96:color=0x131726@0.95:t=fill",
             "drawbox=x=60:y=580:w=8:h=96:color=0x7C5CFC:t=fill",
@@ -472,6 +556,10 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             "+0.08*sin(2*PI*240*t)*(0.5+0.5*cos(2*PI*4.7*t))"
             "+0.05*sin(2*PI*320*t)*(0.4+0.6*sin(2*PI*1.5*t))"
         )
+
+        # Render to a unique temp file and move it into place so that two
+        # simultaneous requests never see (or build on) a half-written video.
+        tmp_video = out_video.with_name(f"{out_video.stem}.{uuid.uuid4().hex[:8]}.tmp.mp4")
 
         cmd = [
             "ffmpeg",
@@ -498,9 +586,13 @@ def ensure_demo_project_assets(demo_key: str) -> Tuple[Path, dict, List[Transcri
             "128k",
             "-movflags",
             "+faststart",
-            str(out_video),
+            str(tmp_video),
         ]
-        subprocess.run(cmd, capture_output=True, check=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if res.returncode != 0:
+            tmp_video.unlink(missing_ok=True)
+            raise RuntimeError(f"Could not generate the demo video: {(res.stderr or '')[-400:]}")
+        os.replace(tmp_video, out_video)
 
     meta = {
         "title": cfg["title"],

@@ -320,7 +320,7 @@ export default function StudioPreview({
           {previewMode === "exported" && clip.export_url ? (
             <video
               ref={mainVideoRef}
-              src={`${clip.export_url}?t=${clip.export_filename}`}
+              src={clip.export_url}
               muted={muted}
               loop
               playsInline

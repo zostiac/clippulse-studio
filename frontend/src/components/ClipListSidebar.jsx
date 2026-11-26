@@ -27,13 +27,17 @@ export default function ClipListSidebar({
 
   async function handleAddClip(e) {
     e.preventDefault();
-    await onCreateClip({
-      title: newTitle.trim() || "Custom Viral Short",
-      start: Number(newStart),
-      end: Number(newEnd),
-    });
-    setCreating(false);
-    setNewTitle("");
+    try {
+      await onCreateClip({
+        title: newTitle.trim() || "Custom Viral Short",
+        start: Number(newStart),
+        end: Number(newEnd),
+      });
+      setCreating(false);
+      setNewTitle("");
+    } catch {
+      // The error is shown by the app-level banner; keep the form open so nothing is lost.
+    }
   }
 
   function scoreBadgeColor(score) {
@@ -70,6 +74,12 @@ export default function ClipListSidebar({
           </button>
         </div>
       </div>
+
+      {project.status_detail && (
+        <div className="px-3.5 py-2 text-[11px] leading-relaxed text-amber-200 bg-amber-500/10 border-b border-amber-500/20">
+          {project.status_detail}
+        </div>
+      )}
 
       {/* Inline Custom Clip Form */}
       {creating && (
