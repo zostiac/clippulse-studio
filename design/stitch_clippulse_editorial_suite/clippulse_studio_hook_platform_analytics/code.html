@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Playfair+Display:wght@500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"surface-bright":"#faf8ff","inverse-on-surface":"#eef0ff","on-background":"#0f172a","primary-container":"#b45309","on-tertiary":"#ffffff","primary-fixed":"#ffdbca","on-secondary-container":"#ffffff","on-error":"#ffffff","inverse-primary":"#ffb68e","tertiary":"#00625a","surface":"#f8fafc","on-tertiary-fixed-variant":"#005049","surface-container-highest":"#e2e8f0","on-primary-container":"#ffffff","primary":"#903f00","secondary":"#4b41e1","error":"#ba1a1a","on-tertiary-container":"#c5fff5","surface-variant":"#f1f5f9","on-secondary-fixed-variant":"#3323cc","inverse-surface":"#283044","tertiary-fixed":"#89f5e7","primary-fixed-dim":"#ffb68e","secondary-container":"#645efb","surface-container-high":"#f1f5f9","surface-container":"#f8fafc","tertiary-fixed-dim":"#6bd8cb","tertiary-container":"#007d73","on-primary-fixed":"#331200","surface-dim":"#d2d9f4","surface-tint":"#9b4500","on-primary":"#ffffff","error-container":"#ffdad6","on-primary-fixed-variant":"#763300","on-tertiary-fixed":"#00201d","secondary-fixed":"#e2dfff","outline-variant":"#e2e8f0","on-surface":"#0f172a","on-surface-variant":"#64748b","secondary-fixed-dim":"#c3c0ff","surface-container-lowest":"#ffffff","outline":"#94a3b8","on-secondary":"#ffffff","surface-container-low":"#ffffff","on-secondary-fixed":"#0f0069","on-error-container":"#93000a","background":"#f8fafc"},borderRadius:{DEFAULT:"0.125rem",lg:"0.25rem",xl:"0.5rem",full:"0.75rem"},spacing:{"space-md":"0.75rem",margin:"0.75rem","gutter-desktop":"0.25rem","margin-desktop":"0.5rem",gutter":"0.5rem","space-sm":"0.5rem","space-xs":"0.25rem","space-lg":"1rem","space-xl":"1.5rem"},fontFamily:{"body-md":["Plus Jakarta Sans"],"label-code-sm":["JetBrains Mono"],"headline-xl":["Playfair Display"],"label-code-md":["JetBrains Mono"],"title-sm":["Plus Jakarta Sans"],"headline-xl-mobile":["Playfair Display"],"headline-lg":["Playfair Display"],"label-code-lg":["JetBrains Mono"],"title-md":["Plus Jakarta Sans"],"headline-md":["Playfair Display"],"body-sm":["Plus Jakarta Sans"]},fontSize:{"body-md":["14px",{lineHeight:"22px",fontWeight:"400"}],"label-code-sm":["9px",{lineHeight:"12px",letterSpacing:"0.06em",fontWeight:"600"}],"headline-xl":["40px",{lineHeight:"48px",letterSpacing:"-0.02em",fontWeight:"600"}],"label-code-md":["11px",{lineHeight:"16px",letterSpacing:"0.04em",fontWeight:"500"}],"title-sm":["14px",{lineHeight:"20px",fontWeight:"600"}],"headline-xl-mobile":["30px",{lineHeight:"38px",letterSpacing:"-0.01em",fontWeight:"600"}],"headline-lg":["28px",{lineHeight:"36px",letterSpacing:"-0.015em",fontWeight:"500"}],"label-code-lg":["14px",{lineHeight:"20px",letterSpacing:"0.02em",fontWeight:"500"}],"title-md":["16px",{lineHeight:"24px",letterSpacing:"-0.005em",fontWeight:"600"}],"headline-md":["22px",{lineHeight:"30px",fontWeight:"500"}],"body-sm":["12px",{lineHeight:"18px",fontWeight:"400"}]}}}};</script></head><body class="bg-[#f8fafc] font-body-md text-body-md text-[#0f172a] antialiased selection:bg-[#b45309]/15 selection:text-[#903f00]"><aside class="fixed left-0 top-0 h-full w-64 bg-[#f8f9fa] z-50 flex flex-col justify-between py-margin-desktop border-r border-[#e2e8f0] shadow-sm"><div class="flex flex-col gap-space-md"><div class="h-14 px-margin-desktop flex items-center justify-between border-b border-[#e2e8f0]"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[#b45309] text-[22px]">movie_edit</span><div class="flex items-baseline gap-space-xs"><span class="font-headline-md text-headline-md tracking-tight text-[#0f172a] font-semibold">ClipPulse</span><span class="font-label-code-sm text-label-code-sm uppercase px-1.5 py-0.5 rounded bg-[#f1f5f9] text-[#b45309] border border-[#e2e8f0] font-semibold">Studio</span></div></div></div><div class="px-margin-desktop"><div class="font-label-code-sm text-label-code-sm uppercase tracking-wider text-[#94a3b8] px-space-xs mb-space-xs font-semibold">Navigation</div><nav class="flex flex-col gap-space-xs" data-active-classes="bg-white text-[#903f00] font-semibold border border-[#e2e8f0] shadow-sm"><a class="flex items-center px-space-sm py-space-xs rounded text-[#64748b] hover:bg-white hover:text-[#0f172a] transition-all font-body-sm text-body-sm" data-path="dashboard" href="#">Dashboard</a><a class="flex items-center px-space-sm py-space-xs rounded text-[#64748b] hover:bg-white hover:text-[#0f172a] transition-all font-body-sm text-body-sm" data-path="projects" href="#">Projects</a><a class="flex items-center px-space-sm py-space-xs rounded text-[#64748b] hover:bg-white hover:text-[#0f172a] transition-all font-body-sm text-body-sm" data-path="editor" href="#">Editor</a><a class="flex items-center px-space-sm py-space-xs rounded text-[#64748b] hover:bg-white hover:text-[#0f172a] transition-all font-body-sm text-body-sm" data-path="analytics" href="#">Analytics</a><a class="flex items-center px-space-sm py-space-xs rounded text-[#64748b] hover:bg-white hover:text-[#0f172a] transition-all font-body-sm text-body-sm" data-path="settings" href="#">Settings</a></nav></div></div><div class="px-margin-desktop flex flex-col gap-space-sm"><div class="p-space-sm rounded bg-white border border-[#e2e8f0] shadow-sm flex flex-col gap-space-xs"><div class="flex items-center justify-between"><span class="font-label-code-sm text-label-code-sm uppercase text-[#64748b]">Cloud Storage</span><span class="font-label-code-sm text-label-code-sm text-[#b45309] font-semibold">142 GB / 500 GB</span></div><div class="w-full h-1.5 bg-[#f1f5f9] rounded-full overflow-hidden"><div class="h-full bg-[#b45309] rounded-full" style="width: 28.4%"></div></div></div><div class="p-space-sm rounded bg-white border border-[#e2e8f0] shadow-sm flex items-center justify-between"><div class="flex items-center gap-space-xs"><span class="w-2 h-2 rounded-full bg-[#b45309] shadow-[0_0_6px_rgba(180,83,9,0.5)]"></span><span class="font-label-code-sm text-label-code-sm uppercase text-[#0f172a] font-semibold">Studio Pro v2.8</span></div><span class="font-label-code-sm text-label-code-sm text-[#059669] bg-[#ecfdf5] border border-[#a7f3d0] px-1.5 py-0.5 rounded uppercase font-semibold">Active</span></div></div></aside><div class="pl-64"><header class="fixed top-0 left-64 right-0 h-14 bg-white/95 backdrop-blur-xl border-b border-[#e2e8f0] z-40 flex items-center justify-between px-space-md shadow-[0_1px_3px_rgba(0,0,0,0.03)]"><div class="flex items-center gap-space-md min-w-0 flex-1"><div class="relative w-72 max-w-sm"><span class="material-symbols-outlined text-[16px] text-[#94a3b8] absolute left-2.5 top-1/2 -translate-y-1/2">search</span><input class="w-full bg-[#f8fafc] border border-[#e2e8f0] rounded pl-8 pr-8 py-1 font-label-code-md text-label-code-md text-[#0f172a] placeholder-[#94a3b8] focus:bg-white focus:outline-none focus:border-[#b45309] transition-colors" placeholder="Search clips, markers, projects..." type="text"/><kbd class="absolute right-2 top-1/2 -translate-y-1/2 font-label-code-sm text-label-code-sm text-[#64748b] bg-[#f1f5f9] px-1 py-0.5 rounded border border-[#e2e8f0]">⌘K</kbd></div><div class="flex items-center gap-space-xs px-2.5 py-1 rounded bg-[#f8fafc] border border-[#e2e8f0]"><span class="material-symbols-outlined text-[#b45309] text-[14px]">auto_awesome</span><span class="font-label-code-sm text-label-code-sm text-[#1e293b] font-medium">Gemini Free AI</span><span class="w-1.5 h-1.5 rounded-full bg-[#b45309]"></span></div></div><div class="flex items-center gap-space-sm"><button class="flex items-center gap-space-xs px-space-md py-1.5 rounded bg-[#b45309] text-white hover:bg-[#903f00] transition-colors font-title-sm text-title-sm font-semibold shadow-sm" type="button"><span class="material-symbols-outlined text-[16px]">add</span><span>+ New Video</span></button><button class="flex items-center gap-space-xs px-space-md py-1.5 rounded bg-white border border-[#e2e8f0] text-[#0f172a] hover:border-[#b45309] hover:text-[#b45309] transition-colors font-title-sm text-title-sm shadow-sm" type="button"><span class="material-symbols-outlined text-[16px] text-[#64748b]">ios_share</span><span>Export All</span></button><div class="h-5 w-px bg-[#e2e8f0] mx-space-xs"></div><a class="p-1.5 rounded text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#0f172a] transition-colors" data-path="settings" href="#" title="Settings"><span class="material-symbols-outlined text-[20px]">settings</span></a><button class="w-8 h-8 rounded-full bg-[#f8fafc] border border-[#e2e8f0] flex items-center justify-center hover:border-[#b45309] transition-colors shadow-sm" title="Profile" type="button"><span class="material-symbols-outlined text-[#b45309] text-[18px]">person</span></button></div></header><main class="relative pt-14 bg-[#f8fafc] min-h-screen"><div class="flex flex-col w-full">
+<!-- Subtle Ambient Top Halo -->
+<div class="relative w-full overflow-hidden px-space-md lg:px-space-xl py-space-lg flex flex-col gap-space-xl">
+<div class="pointer-events-none absolute -top-40 right-1/4 w-[620px] h-[320px] bg-[#b45309]/5 rounded-full blur-[140px]"></div>
+<div class="pointer-events-none absolute top-96 -left-20 w-[420px] h-[260px] bg-[#4b41e1]/5 rounded-full blur-[120px]"></div>
+<!-- 1. Header & Controls -->
+<header class="flex flex-col lg:flex-row lg:items-end justify-between gap-space-md">
+<div class="flex flex-col gap-space-xs">
+<!-- Breadcrumb HUD -->
+<nav aria-label="Breadcrumbs" class="flex items-center gap-space-xs font-label-code-sm text-label-code-sm uppercase tracking-wider text-[#64748b]">
+<span class="hover:text-[#0f172a] transition-colors cursor-pointer">Intelligence</span>
+<span class="text-[#cbd5e1]">/</span>
+<span class="hover:text-[#0f172a] transition-colors cursor-pointer">Platform Telemetry</span>
+<span class="text-[#cbd5e1]">/</span>
+<span class="text-[#b45309] font-semibold">Performance &amp; Retention</span>
+</nav>
+<div class="flex items-baseline gap-space-md mt-space-xs">
+<h1 class="font-headline-xl text-headline-xl text-[#0f172a] tracking-tight">Performance &amp; Retention Intelligence</h1>
+<span class="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-white border border-[#e2e8f0] shadow-sm font-label-code-sm text-label-code-sm text-[#b45309] uppercase font-semibold">
+<span class="w-1.5 h-1.5 rounded-full bg-[#b45309] animate-pulse"></span>
+            Real-Time Engine Sync
+          </span>
+</div>
+</div>
+<!-- Action Cluster -->
+<div class="flex flex-wrap items-center gap-space-sm">
+<!-- Time Range Picker Pill Group -->
+<div class="flex items-center p-1 rounded-lg bg-white border border-[#e2e8f0] shadow-sm">
+<button class="px-space-sm py-1 rounded font-label-code-md text-label-code-md text-[#64748b] hover:text-[#0f172a] transition-all" type="button">Last 7 Days</button>
+<button class="px-space-sm py-1 rounded font-label-code-md text-label-code-md bg-[#b45309] text-white font-semibold shadow-sm transition-all" type="button">Last 30 Days</button>
+<button class="px-space-sm py-1 rounded font-label-code-md text-label-code-md text-[#64748b] hover:text-[#0f172a] transition-all" type="button">This Quarter</button>
+<button class="px-space-sm py-1 rounded font-label-code-md text-label-code-md text-[#64748b] hover:text-[#0f172a] transition-all flex items-center gap-1" type="button">
+            Custom
+            <span class="material-symbols-outlined text-[14px]">tune</span>
+</button>
+</div>
+<!-- Export Action -->
+<button class="flex items-center gap-space-xs px-space-md py-2 rounded bg-white border border-[#e2e8f0] hover:border-[#b45309] text-[#0f172a] hover:text-[#b45309] transition-all font-title-sm text-title-sm group shadow-sm" type="button">
+<span class="material-symbols-outlined text-[18px] text-[#64748b] group-hover:text-[#b45309] transition-colors">download</span>
+<span>Export CSV / PDF Report</span>
+</button>
+</div>
+</header>
+<!-- 2. Executive Telemetry Row (4 Monospace KPI Cards) -->
+<section aria-label="Executive Telemetry Metrics" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-space-md">
+<!-- Card 1: Aggregate Views -->
+<div class="relative overflow-hidden p-space-lg rounded-xl bg-white border border-[#e2e8f0] hover:border-[#b45309]/50 shadow-[0_1px_3px_rgba(0,0,0,0.05),0_10px_20px_rgba(0,0,0,0.02)] transition-all group flex flex-col justify-between">
+<div class="flex items-start justify-between">
+<div class="flex flex-col gap-0.5">
+<span class="font-label-code-sm text-label-code-sm uppercase tracking-wider text-[#64748b]">Aggregate Short Views</span>
+<span class="font-label-code-md text-label-code-md text-[#475569]">Omni-Channel Aggregation</span>
+</div>
+<span class="p-1.5 rounded-lg bg-[#fffbeb] text-[#b45309] border border-[#fef3c7] flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+</span>
+</div>
+<div class="flex items-end justify-between mt-space-md">
+<div class="flex flex-col">
+<span class="font-headline-lg text-headline-lg text-[#0f172a] font-semibold tracking-tight">4.82M</span>
+<div class="flex items-center gap-1 mt-1">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-[#ecfdf5] border border-[#a7f3d0] font-label-code-sm text-label-code-sm text-[#059669] font-medium">
+<span class="material-symbols-outlined text-[12px] mr-0.5">trending_up</span>+24.5%
+              </span>
+<span class="font-label-code-sm text-label-code-sm text-[#64748b]">vs prior cycle</span>
+</div>
+</div>
+<!-- Micro Sparkline SVG -->
+<div class="w-24 h-11">
+<svg class="w-full h-full overflow-visible" fill="none" preserveaspectratio="none" viewbox="0 0 100 40">
+<path class="text-[#b45309]" d="M0,34 Q18,32 30,26 T55,20 T80,10 T100,3" stroke="currentColor" stroke-linecap="round" stroke-width="2.2"></path>
+<path d="M0,34 Q18,32 30,26 T55,20 T80,10 T100,3 L100,40 L0,40 Z" fill="url(#sparkline-grad)" opacity="0.18"></path>
+<defs>
+<lineargradient id="sparkline-grad" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#b45309"></stop>
+<stop offset="100%" stop-color="#b45309" stop-opacity="0"></stop>
+</lineargradient>
+</defs>
+</svg>
+</div>
+</div>
+</div>
+<!-- Card 2: Average Hook Hold (0-3s) -->
+<div class="relative overflow-hidden p-space-lg rounded-xl bg-white border border-[#e2e8f0] hover:border-[#b45309]/50 shadow-[0_1px_3px_rgba(0,0,0,0.05),0_10px_20px_rgba(0,0,0,0.02)] transition-all group flex flex-col justify-between">
+<div class="flex items-start justify-between">
+<div class="flex flex-col gap-0.5">
+<span class="font-label-code-sm text-label-code-sm uppercase tracking-wider text-[#64748b]">Avg Hook Hold (0–3s)</span>
+<span class="font-label-code-md text-label-code-md text-[#b45309] font-medium">Top 2% Benchmark</span>
+</div>
+<span class="p-1.5 rounded-lg bg-[#fffbeb] text-[#b45309] border border-[#fef3c7] flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">timer_play</span>
+</span>
+</div>
+<div class="flex flex-col gap-2 mt-space-md">
+<div class="flex items-baseline justify-between">
+<span class="font-headline-lg text-headline-lg text-[#0f172a] font-semibold tracking-tight">78.4%</span>
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-[#fffbeb] border border-[#fef3c7] font-label-code-sm text-label-code-sm text-[#b45309] font-medium">
+              +5.2% vs avg
+            </span>
+</div>
+<!-- Tactile Dual Track Meter -->
+<div class="w-full bg-[#f1f5f9] h-2 rounded-full overflow-hidden p-[1px] flex items-center border border-[#e2e8f0]">
+<div class="h-full bg-[#b45309] rounded-full shadow-sm" style="width: 78.4%"></div>
+</div>
+<div class="flex items-center justify-between font-label-code-sm text-label-code-sm text-[#64748b]">
+<span>Critical Monetization Gate</span>
+<span class="text-[#0f172a] font-medium">Target: &gt;70%</span>
+</div>
+</div>
+</div>
+<!-- Card 3: Click-Through Rate -->
+<div class="relative overflow-hidden p-space-lg rounded-xl bg-white border border-[#e2e8f0] hover:border-[#b45309]/50 shadow-[0_1px_3px_rgba(0,0,0,0.05),0_10px_20px_rgba(0,0,0,0.02)] transition-all group flex flex-col justify-between">
+<div class="flex items-start justify-between">
+<div class="flex flex-col gap-0.5">
+<span class="font-label-code-sm text-label-code-sm uppercase tracking-wider text-[#64748b]">Click-Through Rate (CTR)</span>
+<span class="font-label-code-md text-label-code-md text-[#475569]">Benchmark: 8.1%</span>
+</div>
+<span class="p-1.5 rounded-lg bg-[#fffbeb] text-[#b45309] border border-[#fef3c7] flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">ads_click</span>
+</span>
+</div>
+<div class="mt-space-md flex flex-col gap-2">
+<div class="flex items-baseline justify-between">
+<span class="font-headline-lg text-headline-lg text-[#0f172a] font-semibold tracking-tight">14.2%</span>
+<span class="font-label-code-sm text-label-code-sm text-[#00625a] bg-[#ecfdf5] border border-[#a7f3d0] px-1.5 py-0.5 rounded font-medium">+6.1% Delta</span>
+</div>
+<!-- Mono Platform Distribution Chips -->
+<div class="grid grid-cols-3 gap-1 pt-2 border-t border-[#e2e8f0] font-label-code-sm text-label-code-sm text-[#64748b]">
+<div class="flex flex-col">
+<span class="truncate">YT Shorts</span>
+<span class="text-[#0f172a] font-semibold">16.1%</span>
+</div>
+<div class="flex flex-col">
+<span class="truncate">TikTok</span>
+<span class="text-[#0f172a] font-semibold">13.8%</span>
+</div>
+<div class="flex flex-col">
+<span class="truncate">Reels</span>
+<span class="text-[#0f172a] font-semibold">12.4%</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 4: AI Predictive Accuracy -->
+<div class="relative overflow-hidden p-space-lg rounded-xl bg-white border border-[#e2e8f0] hover:border-[#b45309]/50 shadow-[0_1px_3px_rgba(0,0,0,0.05),0_10px_20px_rgba(0,0,0,0.02)] transition-all group flex flex-col justify-between">
+<div class="flex items-start justify-between">
+<div class="flex flex-col gap-0.5">
+<span class="font-label-code-sm text-label-code-sm uppercase tracking-wider text-[#64748b]">Predictive Accuracy</span>
+<span class="font-label-code-md text-label-code-md text-[#475569]">48h Watch Correlation</span>
+</div>
+<span class="p-1.5 rounded-lg bg-[#fffbeb] text-[#b45309] border border-[#fef3c7] flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">psychology</span>
+</span>
+</div>
+<div class="flex flex-col gap-2 mt-space-md">
+<div class="flex items-baseline justify-between">
+<span class="font-headline-lg text-headline-lg text-[#0f172a] font-semibold tracking-tight">92.1%</span>
+<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#fffbeb] border border-[#fef3c7] font-label-code-sm text-label-code-sm text-[#b45309] font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-[#b45309]"></span>
+              Calibrated • Model v3
+            </span>
+</div>
+<div class="flex items-center justify-between font-label-code-sm text-label-code-sm text-[#64748b] pt-2 border-t border-[#e2e8f0]">
+<span>Variance Threshold</span>
+<span class="text-[#0f172a] font-medium">±2.8% Mean Err</span>
+</div>
+</div>
+</div>
+</section>
+<!-- 3. Master Interactive Retention Curve & Virality Diagnostic Hub -->
+<section aria-label="Deep-Dive Retention Analytics" class="grid grid-cols-1 xl:grid-cols-12 gap-space-md">
+<!-- Main Retention Graph (8 Columns) -->
+<div class="xl:col-span-8 p-space-lg rounded-xl bg-white border border-[#e2e8f0] shadow-[0_1px_3px_rgba(0,0,0,0.05),0_10px_20px_rgba(0,0,0,0.02)] flex flex-col justify-between relative">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between pb-space-md border-b border-[#e2e8f0] gap-space-xs">
+<div>
+<div class="flex items-center gap-space-xs">
+<h2 class="font-title-md text-title-md text-[#0f172a]">First-60-Seconds Cross-Platform Retention Curve</h2>
+<span class="font-label-code-sm text-label-code-sm uppercase px-1.5 py-0.5 rounded bg-[#f1f5f9] text-[#b45309] border border-[#e2e8f0] font-semibold">Synthesized 480 Runs</span>
+</div>
+<p class="font-body-sm text-body-sm text-[#64748b] mt-0.5">High-frequency drop-off mapping calibrated against 12M combined impression events.</p>
+</div>
+<!-- Custom Legend Badges -->
+<div class="flex items-center gap-space-sm flex-wrap font-label-code-sm text-label-code-sm">
+<div class="flex items-center gap-1.5">
+<span class="w-3 h-0.5 bg-[#0f172a] rounded"></span>
+<span class="text-[#0f172a] font-medium">Actual Retention</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-3 h-0.5 border-t-2 border-dashed border-[#d97706]"></span>
+<span class="text-[#d97706] font-medium">AI Predicted</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="w-3 h-0.5 bg-[#94a3b8] rounded opacity-70"></span>
+<span class="text-[#64748b]">Median Benchmark</span>
+</div>
+</div>
+</div>
+<!-- Master Chart Canvas Container -->
+<div class="relative w-full h-[320px] mt-space-md bg-[#fafbfc] rounded-lg border border-[#f1f5f9] overflow-hidden">
+<!-- Background Grid Lines -->
+<div class="absolute inset-0 flex flex-col justify-between pointer-events-none p-3">
+<div class="w-full border-b border-[#e2e8f0] flex justify-between pr-2 text-[#94a3b8] font-label-code-sm text-label-code-sm"><span>100%</span></div>
+<div class="w-full border-b border-[#e2e8f0] flex justify-between pr-2 text-[#94a3b8] font-label-code-sm text-label-code-sm"><span>75%</span></div>
+<div class="w-full border-b border-[#e2e8f0] flex justify-between pr-2 text-[#94a3b8] font-label-code-sm text-label-code-sm"><span>50%</span></div>
+<div class="w-full border-b border-[#e2e8f0] flex justify-between pr-2 text-[#94a3b8] font-label-code-sm text-label-code-sm"><span>25%</span></div>
+<div class="w-full border-b border-[#e2e8f0] flex justify-between pr-2 text-[#94a3b8] font-label-code-sm text-label-code-sm"><span>0%</span></div>
+</div>
+<!-- Main SVG Rendering Curves -->
+<svg class="absolute inset-0 w-full h-full overflow-visible p-3" preserveaspectratio="none" viewbox="0 0 900 300">
+<defs>
+<lineargradient id="actualGradient" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#0f172a" stop-opacity="0.10"></stop>
+<stop offset="100%" stop-color="#0f172a" stop-opacity="0.01"></stop>
+</lineargradient>
+<lineargradient id="goldArea" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#d97706" stop-opacity="0.12"></stop>
+<stop offset="100%" stop-color="#d97706" stop-opacity="0"></stop>
+</lineargradient>
+</defs>
+<!-- Benchmark Line (Muted Slate) -->
+<path d="M 0,15 C 80,75 180,120 300,165 C 450,210 650,235 900,245" fill="none" opacity="0.6" stroke="#94a3b8" stroke-dasharray="4,4" stroke-width="1.5"></path>
+<!-- Predicted Line (Dashed Amber/Ochre) -->
+<path d="M 0,6 C 40,15 120,38 210,50 C 320,65 420,80 550,110 C 700,145 800,165 900,180" fill="none" opacity="0.9" stroke="#d97706" stroke-dasharray="5,4" stroke-width="2"></path>
+<!-- Actual Curve Area Fill -->
+<path d="M 0,4 C 30,16 60,18 100,20 C 180,24 240,40 330,42 C 420,44 500,65 600,68 C 720,72 810,120 900,135 L 900,300 L 0,300 Z" fill="url(#actualGradient)"></path>
+<!-- Actual Retention Line (Rich Deep Navy/Slate) -->
+<path d="M 0,4 C 30,16 60,18 100,20 C 180,24 240,40 330,42 C 420,44 500,65 600,68 C 720,72 810,120 900,135" fill="none" stroke="#0f172a" stroke-linecap="round" stroke-width="2.8"></path>
+<!-- Timeline Event Marker 1 (0:02 Hook Pin) -->
+<g transform="translate(30, 16)">
+<line opacity="0.6" stroke="#d97706" stroke-dasharray="2,3" stroke-width="1" x1="0" x2="0" y1="0" y2="284"></line>
+<circle cx="0" cy="0" fill="#d97706" r="5" stroke="#ffffff" stroke-width="2"></circle>
+</g>
+<!-- Timeline Event Marker 2 (0:14 Curiosity Spike) -->
+<g transform="translate(210, 36)">
+<line opacity="0.6" stroke="#0284c7" stroke-dasharray="2,3" stroke-width="1" x1="0" x2="0" y1="0" y2="264"></line>
+<circle cx="0" cy="0" fill="#0284c7" r="5" stroke="#ffffff" stroke-width="2"></circle>
+</g>
+<!-- Timeline Event Marker 3 (0:28 Keyword Pop) -->
+<g transform="translate(420, 48)">
+<line opacity="0.6" stroke="#d97706" stroke-dasharray="2,3" stroke-width="1" x1="0" x2="0" y1="0" y2="252"></line>
+<circle cx="0" cy="0" fill="#d97706" r="5" stroke="#ffffff" stroke-width="2"></circle>
+</g>
+</svg>
+<!-- Interactive Floating Telemetry Event Callout Cards -->
+<!-- Event 1 Callout -->
+<div class="absolute left-6 top-6 bg-white/95 backdrop-blur-md border border-[#fef3c7] p-space-xs rounded shadow-md flex flex-col gap-0.5 max-w-[190px] z-10">
+<div class="flex items-center justify-between">
+<span class="font-label-code-sm text-label-code-sm text-[#b45309] uppercase font-bold">@ 0:02 Hook Pin</span>
+<span class="font-label-code-sm text-label-code-sm text-[#0f172a] font-semibold">94.2%</span>
+</div>
+<p class="font-body-sm text-[11px] leading-tight text-[#475569] truncate">"Right? Well, No..."</p>
+</div>
+<!-- Event 2 Callout -->
+<div class="absolute left-[24%] top-16 bg-white/95 backdrop-blur-md border border-[#e2e8f0] p-space-xs rounded shadow-md flex flex-col gap-0.5 max-w-[210px] z-10">
+<div class="flex items-center justify-between">
+<span class="font-label-code-sm text-label-code-sm text-[#0284c7] uppercase font-bold">@ 0:14 Spike #1</span>
+<span class="font-label-code-sm text-label-code-sm text-[#0f172a] font-semibold">86.5%</span>
+</div>
+<p class="font-body-sm text-[11px] leading-tight text-[#475569] truncate">"Over a Million Copies"</p>
+</div>
+<!-- Event 3 Callout -->
+<div class="absolute left-[47%] top-24 bg-white/95 backdrop-blur-md border border-[#fef3c7] p-space-xs rounded shadow-md flex flex-col gap-0.5 max-w-[220px] z-10">
+<div class="flex items-center justify-between">
+<span class="font-label-code-sm text-label-code-sm text-[#b45309] uppercase font-bold">@ 0:28 Keyword Pop</span>
+<span class="font-label-code-sm text-label-code-sm text-[#0f172a] font-semibold">79.1%</span>
+</div>
+<p class="font-body-sm text-[11px] leading-tight text-[#475569] truncate">Hormozi Dynamic Cut Stress</p>
+</div>
+</div>
+<!-- Timeline X-Axis Scale -->
+<div class="flex justify-between items-center pt-space-xs border-t border-[#e2e8f0] font-label-code-sm text-label-code-sm text-[#64748b] mt-2">
+<span>00:00 (Hook)</span>
+<span>00:05</span>
+<span>00:15 (First Filter)</span>
+<span>00:30 (Mid-Stash)</span>
+<span>00:45</span>
+<span>00:60 (End Loop)</span>
+</div>
+</div>
+<!-- Right Diagnostic Breakdown Panel (4 Columns) -->
+<div class="xl:col-span-4 p-space-lg rounded-xl bg-white border border-[#e2e8f0] shadow-[0_1px_3px_rgba(0,0,0,0.05),0_10px_20px_rgba(0,0,0,0.02)] flex flex-col justify-between gap-space-md">
+<div class="flex items-center justify-between pb-space-sm border-b border-[#e2e8f0]">
+<div>
+<h3 class="font-title-sm text-title-sm text-[#0f172a]">Curiosity Spikes &amp; Drivers</h3>
+<span class="font-label-code-sm text-label-code-sm text-[#64748b] uppercase">Neural Script Decomposition</span>
+</div>
+<span class="p-1 rounded bg-[#fffbeb] text-[#b45309] border border-[#fef3c7]">
+<span class="material-symbols-outlined text-[18px]">bolt</span>
+</span>
+</div>
+<!-- Telemetry Diagnostic Meters -->
+<div class="flex flex-col gap-space-md">
+<!-- Meter 1 -->
+<div class="flex flex-col gap-1.5">
+<div class="flex justify-between items-center font-label-code-sm text-label-code-sm">
+<span class="text-[#0f172a] flex items-center gap-1.5 font-medium">
+<span class="material-symbols-outlined text-[14px] text-[#b45309]">graphic_eq</span>
+                Audio Cadence Energy
+              </span>
+<span class="text-[#b45309] font-bold">94 / 100</span>
+</div>
+<div class="w-full bg-[#f1f5f9] h-2 rounded-full overflow-hidden border border-[#e2e8f0]">
+<div class="h-full bg-[#b45309] rounded-full" style="width: 94%"></div>
+</div>
+<span class="font-label-code-sm text-label-code-sm text-[#64748b]">BPM Shift syncs precisely with screen transition frequency</span>
+</div>
+<!-- Meter 2 -->
+<div class="flex flex-col gap-1.5">
+<div class="flex justify-between items-center font-label-code-sm text-label-code-sm">
+<span class="text-[#0f172a] flex items-center gap-1.5 font-medium">
+<span class="material-symbols-outlined text-[14px] text-[#4b41e1]">movie</span>
+                Visual Cut Frequency
+              </span>
+<span class="text-[#4b41e1] font-bold">88 / 100</span>
+</div>
+<div class="w-full bg-[#f1f5f9] h-2 rounded-full overflow-hidden border border-[#e2e8f0]">
+<div class="h-full bg-[#4b41e1] rounded-full" style="width: 88%"></div>
+</div>
+<span class="font-label-code-sm text-label-code-sm text-[#64748b]">Average cut cadence: 1.84s (Ideal short range 1.6 - 2.2s)</span>
+</div>
+<!-- Meter 3 -->
+<div class="flex flex-col gap-1.5">
+<div class="flex justify-between items-center font-label-code-sm text-label-code-sm">
+<span class="text-[#0f172a] flex items-center gap-1.5 font-medium">
+<span class="material-symbols-outlined text-[14px] text-[#00625a]">psychology_alt</span>
+                Semantic Open-Loop Curiosity
+              </span>
+<span class="text-[#00625a] font-bold">91 / 100</span>
+</div>
+<div class="w-full bg-[#f1f5f9] h-2 rounded-full overflow-hidden border border-[#e2e8f0]">
+<div class="h-full bg-[#007d73] rounded-full" style="width: 91%"></div>
+</div>
+<span class="font-label-code-sm text-label-code-sm text-[#64748b]">Information gap resolved only during final 8 seconds</span>
+</div>
+</div>
+<!-- Recommended Optimization Insight Card -->
+<div class="p-space-md rounded-lg bg-[#fffbeb] border border-[#fef3c7] relative overflow-hidden">
+<div class="pointer-events-none absolute -right-6 -bottom-6 w-20 h-20 bg-[#b45309]/10 rounded-full blur-xl"></div>
+<div class="flex items-start gap-space-xs">
+<span class="material-symbols-outlined text-[#b45309] text-[20px] shrink-0 mt-0.5">auto_awesome</span>
+<div class="flex flex-col gap-1">
+<span class="font-label-code-sm text-label-code-sm uppercase tracking-wider text-[#b45309] font-bold">AI Strategy Vector</span>
+<p class="font-body-sm text-body-sm text-[#475569]">
+                Clips featuring <span class="text-[#b45309] font-semibold">3-second bold contradiction hooks</span> preserve <strong class="text-[#0f172a] font-semibold">+28% higher hold</strong> straight through the 15-second monetization threshold.
+              </p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- 4. Leaderboard Table: "Top Performing Viral Clips" -->
+<section aria-label="Top Performing Viral Clips" class="flex flex-col rounded-xl bg-white border border-[#e2e8f0] shadow-[0_1px_3px_rgba(0,0,0,0.05),0_10px_20px_rgba(0,0,0,0.02)] overflow-hidden">
+<!-- Table Controls Bar -->
+<div class="p-space-md border-b border-[#e2e8f0] flex flex-col md:flex-row md:items-center justify-between gap-space-md bg-[#fafbfc]">
+<div class="flex items-center gap-space-md">
+<h2 class="font-title-md text-title-md text-[#0f172a]">Top Performing Viral Clips</h2>
+<span class="px-2 py-0.5 rounded bg-white border border-[#e2e8f0] font-label-code-sm text-label-code-sm text-[#b45309] font-semibold shadow-sm">
+            24 Active Renders
+          </span>
+</div>
+<div class="flex flex-wrap items-center gap-space-sm">
+<!-- In-Table Search Filter -->
+<div class="relative w-64">
+<span class="material-symbols-outlined text-[16px] text-[#94a3b8] absolute left-2.5 top-1/2 -translate-y-1/2">filter_list</span>
+<input class="w-full bg-white border border-[#e2e8f0] rounded pl-8 pr-3 py-1 font-label-code-md text-label-code-md text-[#0f172a] placeholder-[#94a3b8] focus:outline-none focus:border-[#b45309]" placeholder="Filter by script token..." type="text"/>
+</div>
+<!-- Platform Dropdown Filter -->
+<button class="flex items-center gap-1.5 px-space-sm py-1.5 rounded bg-white border border-[#e2e8f0] text-[#0f172a] font-label-code-md text-label-code-md hover:border-[#b45309] transition-colors shadow-sm" type="button">
+<span class="material-symbols-outlined text-[15px] text-[#b45309]">hub</span>
+<span>All Channels</span>
+<span class="material-symbols-outlined text-[14px] text-[#64748b]">expand_more</span>
+</button>
+<!-- Hook Score Sorter -->
+<button class="flex items-center gap-1.5 px-space-sm py-1.5 rounded bg-[#b45309] text-white font-label-code-md text-label-code-md font-semibold transition-transform active:scale-95 shadow-sm" type="button">
+<span class="material-symbols-outlined text-[15px]">sort</span>
+<span>Sort: Hook Score (Desc)</span>
+</button>
+</div>
+</div>
+<!-- High-Density Workstation Table -->
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-[#e2e8f0] bg-[#f8fafc] font-label-code-sm text-label-code-sm uppercase tracking-wider text-[#64748b]">
+<th class="py-3 px-space-md font-semibold">Clip &amp; Master Project</th>
+<th class="py-3 px-space-md font-semibold">Platform Mix</th>
+<th class="py-3 px-space-md font-semibold">AI Predicted Virality</th>
+<th class="py-3 px-space-md font-semibold">0–3s Hook Hold</th>
+<th class="py-3 px-space-md font-semibold">100% Completion</th>
+<th class="py-3 px-space-md font-semibold">Impressions &amp; Views</th>
+<th class="py-3 px-space-md font-semibold text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-[#e2e8f0] font-body-sm text-body-sm">
+<!-- Row 1 -->
+<tr class="hover:bg-[#f8fafc] transition-colors group">
+<!-- Clip & Project -->
+<td class="py-space-md px-space-md">
+<div class="flex items-center gap-space-md">
+<div class="relative w-12 h-16 rounded overflow-hidden bg-[#f1f5f9] shrink-0 border border-[#e2e8f0] shadow-sm">
+<img class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" data-alt="Cinematic neon-lit atmospheric video frame showing a stylized car speeding through a raining metropolis at dusk with amber headlights and reflective asphalt in an editorial noir palette" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBYHjqAZ8UDr3vaxIkZS1MrF8NysH1VPpjB1wnfeRpXrTjsKHdm8wISwOluMR87Z7OPAJZgRcOzK3MfyTrudVzojcxWLodgg-7YasMIRWJJYkeXLy_EGtbNCOuaLWpp2bEul2RbHGXFFrchZA20GcoBVwqeHygRD62DAn2M4RFkUuT6cf1q5_hnVccVShAWfnQ33ceyUo_QmDga0O9_0AA7F8_RPdJVMCTqtpACtkws"/>
+<span class="absolute bottom-1 right-1 font-label-code-sm text-[8px] bg-black/80 px-1 py-0.2 rounded text-white font-mono">0:42</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-title-sm text-title-sm text-[#0f172a] font-semibold group-hover:text-[#b45309] transition-colors truncate">Why GTA is a Bigger Deal Than You Think</span>
+<span class="font-label-code-sm text-label-code-sm text-[#64748b] truncate">Clip #2: Chinatown Wars Myth Buster</span>
+<span class="font-label-code-sm text-[10px] text-[#64748b] flex items-center gap-1 mt-0.5">
+<span class="material-symbols-outlined text-[12px] text-[#b45309]">record_voice_over</span> Hormozi Punchy Captions
+                    </span>
+</div>
+</div>
+</td>
+<!-- Platform Distribution -->
+<td class="py-space-md px-space-md">
+<div class="flex items-center gap-1.5">
+<span class="px-1.5 py-0.5 rounded bg-[#f1f5f9] font-label-code-sm text-label-code-sm border border-[#e2e8f0] text-[#475569]">YT Shorts</span>
+<span class="px-1.5 py-0.5 rounded bg-[#f1f5f9] font-label-code-sm text-label-code-sm border border-[#e2e8f0] text-[#475569]">TikTok</span>
+<span class="px-1.5 py-0.5 rounded bg-[#f1f5f9] font-label-code-sm text-label-code-sm border border-[#e2e8f0] text-[#475569]">IG Reels</span>
+</div>
+</td>
+<!-- Predicted Hook Score -->
+<td class="py-space-md px-space-md">
+<div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-[#fffbeb] border border-[#fef3c7]">
+<span class="w-1.5 h-1.5 rounded-full bg-[#b45309]"></span>
+<span class="font-label-code-md text-label-code-md text-[#b45309] font-bold">85 Viral</span>
+</div>
+</td>
+<!-- 0-3s Hook Hold Rate -->
+<td class="py-space-md px-space-md">
+<div class="flex flex-col">
+<span class="font-label-code-lg text-label-code-lg font-bold text-[#0f172a]">88.4%</span>
+<span class="font-label-code-sm text-label-code-sm text-[#059669] flex items-center gap-0.5 font-medium">
+<span class="material-symbols-outlined text-[11px]">arrow_upward</span> +12.3% above baseline
+                  </span>
+</div>
+</td>
+<!-- 100% Completion Rate -->
+<td class="py-space-md px-space-md">
+<div class="flex flex-col">
+<span class="font-label-code-lg text-label-code-lg font-semibold text-[#0f172a]">64.2%</span>
+<div class="w-20 bg-[#f1f5f9] h-1.5 rounded-full overflow-hidden mt-1 border border-[#e2e8f0]">
+<div class="h-full bg-[#b45309]" style="width: 64.2%"></div>
+</div>
+</div>
+</td>
+<!-- Impressions & Views -->
+<td class="py-space-md px-space-md">
+<div class="flex flex-col">
+<span class="font-title-sm text-title-sm font-semibold text-[#0f172a]">1.42M views</span>
+<span class="font-label-code-sm text-label-code-sm text-[#64748b]">182K likes • 3.2K saves</span>
+</div>
+</td>
+<!-- Actions -->
+<td class="py-space-md px-space-md text-right">
+<div class="flex items-center justify-end gap-1.5">
+<button class="px-2.5 py-1 rounded bg-white hover:bg-[#b45309] hover:text-white border border-[#e2e8f0] text-[#0f172a] transition-all font-label-code-md text-label-code-md shadow-sm" type="button">
+                    Open in Editor
+                  </button>
+<button class="p-1 rounded text-[#64748b] hover:text-[#b45309] hover:bg-[#f1f5f9] transition-colors" title="Export Kit" type="button">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+<button class="p-1 rounded text-[#64748b] hover:text-[#0f172a] hover:bg-[#f1f5f9] transition-colors" title="More" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-[#f8fafc] transition-colors group">
+<!-- Clip & Project -->
+<td class="py-space-md px-space-md">
+<div class="flex items-center gap-space-md">
+<div class="relative w-12 h-16 rounded overflow-hidden bg-[#f1f5f9] shrink-0 border border-[#e2e8f0] shadow-sm">
+<img class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" data-alt="Editorial portrait photograph of a focused software engineer working at night in a moody modern workstation surrounded by subtle warm ambient golden lamps" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCc8uMDLOU4WbYquZi_yXhYRnZFV60-JoMffMCYXzrXOZsBmUSDC4wxiRJwt0KHueifWcAHWw6-cHosQhamNBjveNZreIo6jIF3PpwWAje0VmM2_UNIUPutcid0myEkm9yWlx5S5WeMtVlekcwmxCM_BbX0wGID7yBrIJWjrhq4WZfIS5Rck8uujuZfIW1zRid7_PnhAwZeFhRrnwQ0w9pwvQ6zjW3bIC6rvPQlOh0t"/>
+<span class="absolute bottom-1 right-1 font-label-code-sm text-[8px] bg-black/80 px-1 py-0.2 rounded text-white font-mono">0:58</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-title-sm text-title-sm text-[#0f172a] font-semibold group-hover:text-[#b45309] transition-colors truncate">Why 90% of Creators Quit Before Day 30</span>
+<span class="font-label-code-sm text-label-code-sm text-[#64748b] truncate">Clip #1: The Dopamine Drought Fallacy</span>
+<span class="font-label-code-sm text-[10px] text-[#64748b] flex items-center gap-1 mt-0.5">
+<span class="material-symbols-outlined text-[12px] text-[#b45309]">motion_mode</span> 1.4s Velocity B-Roll
+                    </span>
+</div>
+</div>
+</td>
+<!-- Platform Distribution -->
+<td class="py-space-md px-space-md">
+<div class="flex items-center gap-1.5">
+<span class="px-1.5 py-0.5 rounded bg-[#f1f5f9] font-label-code-sm text-label-code-sm border border-[#e2e8f0] text-[#475569]">TikTok</span>
+<span class="px-1.5 py-0.5 rounded bg-[#f1f5f9] font-label-code-sm text-label-code-sm border border-[#e2e8f0] text-[#475569]">IG Reels</span>
+</div>
+</td>
+<!-- Predicted Hook Score -->
+<td class="py-space-md px-space-md">
+<div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-[#fffbeb] border border-[#fef3c7]">
+<span class="w-1.5 h-1.5 rounded-full bg-[#b45309]"></span>
+<span class="font-label-code-md text-label-code-md text-[#b45309] font-bold">91 Viral</span>
+</div>
+</td>
+<!-- 0-3s Hook Hold Rate -->
+<td class="py-space-md px-space-md">
+<div class="flex flex-col">
+<span class="font-label-code-lg text-label-code-lg font-bold text-[#0f172a]">84.1%</span>
+<span class="font-label-code-sm text-label-code-sm text-[#059669] flex items-center gap-0.5 font-medium">
+<span class="material-symbols-outlined text-[11px]">arrow_upward</span> +8.9% above baseline
+                  </span>
+</div>
+</td>
+<!-- 100% Completion Rate -->
+<td class="py-space-md px-space-md">
+<div class="flex flex-col">
+<span class="font-label-code-lg text-label-code-lg font-semibold text-[#0f172a]">58.7%</span>
+<div class="w-20 bg-[#f1f5f9] h-1.5 rounded-full overflow-hidden mt-1 border border-[#e2e8f0]">
+<div class="h-full bg-[#b45309]" style="width: 58.7%"></div>
+</div>
+</div>
+</td>
+<!-- Impressions & Views -->
+<td class="py-space-md px-space-md">
+<div class="flex flex-col">
+<span class="font-title-sm text-title-sm font-semibold text-[#0f172a]">890K views</span>
+<span class="font-label-code-sm text-label-code-sm text-[#64748b]">94K likes • 8.1K shares</span>
+</div>
+</td>
+<!-- Actions -->
+<td class="py-space-md px-space-md text-right">
+<div class="flex items-center justify-end gap-1.5">
+<button class="px-2.5 py-1 rounded bg-white hover:bg-[#b45309] hover:text-white border border-[#e2e8f0] text-[#0f172a] transition-all font-label-code-md text-label-code-md shadow-sm" type="button">
+                    Open in Editor
+                  </button>
+<button class="p-1 rounded text-[#64748b] hover:text-[#b45309] hover:bg-[#f1f5f9] transition-colors" title="Export Kit" type="button">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+<button class="p-1 rounded text-[#64748b] hover:text-[#0f172a] hover:bg-[#f1f5f9] transition-colors" title="More" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-[#f8fafc] transition-colors group">
+<!-- Clip & Project -->
+<td class="py-space-md px-space-md">
+<div class="flex items-center gap-space-md">
+<div class="relative w-12 h-16 rounded overflow-hidden bg-[#f1f5f9] shrink-0 border border-[#e2e8f0] shadow-sm">
+<img class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" data-alt="Minimalist architectural tech lab with warm ambient under-desk lighting displaying abstract geometric wireframes on floating holographic glass screens" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDcKKpMQ4tGtHzP9Q7p4vdg1h42e4mB_vVFKaZyyCgAaRm-ySJ-oM7GBRy0rXA1Xxvbq3wUfBcG3bvIn81sKPU_N5S6gvU1yN8WsaVGy-fatGegnnA18bTv11EQPs49iO-MrqnSQXtcsVlqeFDj0N_IpGipniL-a2YzF_5Yyi1vbx5z1MFEP86BGNKMVmoM0E4HqjejJEDztbDLbOwg8Hg_cCQs9snecX64QN4PguKN"/>
+<span class="absolute bottom-1 right-1 font-label-code-sm text-[8px] bg-black/80 px-1 py-0.2 rounded text-white font-mono">0:35</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-title-sm text-title-sm text-[#0f172a] font-semibold group-hover:text-[#b45309] transition-colors truncate">How Small AI Teams Ship 10x Faster</span>
+<span class="font-label-code-sm text-label-code-sm text-[#64748b] truncate">Clip #3: The Architecture Paradox</span>
+<span class="font-label-code-sm text-[10px] text-[#64748b] flex items-center gap-1 mt-0.5">
+<span class="material-symbols-outlined text-[12px] text-[#b45309]">speed</span> Dynamic Zoom Punch-ins
+                    </span>
+</div>
+</div>
+</td>
+<!-- Platform Distribution -->
+<td class="py-space-md px-space-md">
+<div class="flex items-center gap-1.5">
+<span class="px-1.5 py-0.5 rounded bg-[#f1f5f9] font-label-code-sm text-label-code-sm border border-[#e2e8f0] text-[#475569]">YT Shorts</span>
+<span class="px-1.5 py-0.5 rounded bg-[#f1f5f9] font-label-code-sm text-label-code-sm border border-[#e2e8f0] text-[#475569]">LinkedIn Video</span>
+</div>
+</td>
+<!-- Predicted Hook Score -->
+<td class="py-space-md px-space-md">
+<div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-[#fffbeb] border border-[#fef3c7]">
+<span class="w-1.5 h-1.5 rounded-full bg-[#b45309]"></span>
+<span class="font-label-code-md text-label-code-md text-[#b45309] font-bold">82 Viral</span>
+</div>
+</td>
+<!-- 0-3s Hook Hold Rate -->
+<td class="py-space-md px-space-md">
+<div class="flex flex-col">
+<span class="font-label-code-lg text-label-code-lg font-bold text-[#0f172a]">76.5%</span>
+<span class="font-label-code-sm text-label-code-sm text-[#059669] flex items-center gap-0.5 font-medium">
+<span class="material-symbols-outlined text-[11px]">arrow_upward</span> +3.1% above baseline
+                  </span>
+</div>
+</td>
+<!-- 100% Completion Rate -->
+<td class="py-space-md px-space-md">
+<div class="flex flex-col">
+<span class="font-label-code-lg text-label-code-lg font-semibold text-[#0f172a]">51.2%</span>
+<div class="w-20 bg-[#f1f5f9] h-1.5 rounded-full overflow-hidden mt-1 border border-[#e2e8f0]">
+<div class="h-full bg-[#b45309]" style="width: 51.2%"></div>
+</div>
+</div>
+</td>
+<!-- Impressions & Views -->
+<td class="py-space-md px-space-md">
+<div class="flex flex-col">
+<span class="font-title-sm text-title-sm font-semibold text-[#0f172a]">420K views</span>
+<span class="font-label-code-sm text-label-code-sm text-[#64748b]">38K likes • 4.1K bookmarks</span>
+</div>
+</td>
+<!-- Actions -->
+<td class="py-space-md px-space-md text-right">
+<div class="flex items-center justify-end gap-1.5">
+<button class="px-2.5 py-1 rounded bg-white hover:bg-[#b45309] hover:text-white border border-[#e2e8f0] text-[#0f172a] transition-all font-label-code-md text-label-code-md shadow-sm" type="button">
+                    Open in Editor
+                  </button>
+<button class="p-1 rounded text-[#64748b] hover:text-[#b45309] hover:bg-[#f1f5f9] transition-colors" title="Export Kit" type="button">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+<button class="p-1 rounded text-[#64748b] hover:text-[#0f172a] hover:bg-[#f1f5f9] transition-colors" title="More" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer Metadata & Pagination Bar -->
+<div class="p-space-sm px-space-md border-t border-[#e2e8f0] bg-[#fafbfc] flex flex-col sm:flex-row items-center justify-between gap-space-sm font-label-code-sm text-label-code-sm text-[#64748b]">
+<div class="flex items-center gap-space-md">
+<span>Showing 1–3 of 24 High-Retention Sequences</span>
+<span class="text-[#cbd5e1]">•</span>
+<span class="text-[#b45309] font-semibold">Aggregated Algorithm Confidence: 94.8%</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="p-1 rounded hover:bg-[#f1f5f9] hover:text-[#0f172a] disabled:opacity-30" disabled="" type="button">
+<span class="material-symbols-outlined text-[18px]">chevron_left</span>
+</button>
+<span class="px-2.5 py-0.5 rounded bg-[#b45309] text-white font-semibold shadow-sm">1</span>
+<button class="px-2.5 py-0.5 rounded hover:bg-[#f1f5f9] text-[#0f172a] border border-[#e2e8f0] bg-white transition-colors" type="button">2</button>
+<button class="px-2.5 py-0.5 rounded hover:bg-[#f1f5f9] text-[#0f172a] border border-[#e2e8f0] bg-white transition-colors" type="button">3</button>
+<button class="p-1 rounded hover:bg-[#f1f5f9] hover:text-[#0f172a] transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">chevron_right</span>
+</button>
+</div>
+</div>
+</section>
+</div>
+</div>
+<script>
+  // Dynamic Shell State Synchronization
+  // Highlights 'Analytics' inside the app shell sidebar nav automatically
+  (function initAnalyticsActiveState() {
+    const navLinks = document.querySelectorAll('aside nav a');
+    navLinks.forEach(link => {
+      if (link.getAttribute('data-path') === 'analytics' || link.textContent.trim().toLowerCase() === 'analytics') {
+        link.className = 'flex items-center px-space-sm py-space-xs rounded bg-white text-[#b45309] font-semibold border border-[#e2e8f0] shadow-sm transition-colors font-body-sm text-body-sm';
+      } else {
+        link.classList.remove('bg-white', 'text-[#b45309]', 'font-semibold', 'border', 'shadow-sm');
+        link.classList.add('text-[#64748b]');
+      }
+    });
+  })();
+</script></main></div></body></html>
