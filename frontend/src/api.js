@@ -141,6 +141,19 @@ export const api = {
 
   exportAll: (projectId) =>
     req(`/api/projects/${encodeURIComponent(projectId)}/export-all`, { method: "POST" }),
+
+  updateProject: (projectId, payload) =>
+    req(`/api/projects/${encodeURIComponent(projectId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+
+  getAnalytics: () => req("/api/analytics"),
+
+  getHealth: () => req("/api/health"),
+
+  downloadBundleUrl: (projectId) => `/api/projects/${encodeURIComponent(projectId)}/download-bundle`,
 };
 
 export function fmtTime(sec) {

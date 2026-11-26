@@ -156,6 +156,8 @@ class Project(BaseModel):
     clips: List[Clip] = Field(default_factory=list)
     energy_peaks: List[float] = Field(default_factory=list)
     ai_engine_used: str = "local_free"
+    archived: bool = False
+    skip_transcription: bool = False
 
 
 AIProvider = Literal["local_free", "groq", "gemini", "openrouter", "openai"]
@@ -169,7 +171,8 @@ class AppSettings(BaseModel):
     transcription_provider: TranscriptionProvider = "auto"
     transcription_api_key: str = ""
     enable_local_whisper: bool = True
-    whisper_model: Literal["tiny", "base"] = "tiny"
+    whisper_model: Literal["tiny", "base", "small", "medium"] = "tiny"
+    max_clips: int = Field(default=6, ge=1, le=15)
     # Legacy alias support
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
