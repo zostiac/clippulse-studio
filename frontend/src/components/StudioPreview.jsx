@@ -57,6 +57,11 @@ export default function StudioPreview({
 }) {
   const mainVideoRef = useRef(null);
   const auxVideoRef = useRef(null);
+  const clipId = clip?.id || null;
+  const clipStart = clip?.start ?? 0;
+  const clipEnd = clip?.end ?? 0;
+  const captionStyle = clip?.style?.caption_style;
+  const wordsPerLine = clip?.style?.words_per_line;
 
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -77,7 +82,7 @@ export default function StudioPreview({
     mainVideoRef.current.currentTime = previewMode === "live" ? clip.start : 0;
     if (auxVideoRef.current) auxVideoRef.current.currentTime = clip.start;
     onTimeUpdate(clip.start);
-  }, [clip?.id, clip?.start, previewMode, onTimeUpdate]);
+  }, [clip, clipId, clipStart, previewMode, onTimeUpdate]);
 
   // Expose seek function to parent (for transcript click-to-seek)
   useEffect(() => {
@@ -102,7 +107,7 @@ export default function StudioPreview({
     let lastUiUpdate = 0;
     const tick = (now) => {
       const video = mainVideoRef.current;
-      if (video && clip && !video.paused) {
+      if (video && clipId && !video.paused) {
         const time = video.currentTime;
         if (now - lastUiUpdate >= 66) {
           onTimeUpdate(time);
@@ -111,16 +116,16 @@ export default function StudioPreview({
         if (auxVideoRef.current && Math.abs(auxVideoRef.current.currentTime - time) > 0.12) {
           auxVideoRef.current.currentTime = time;
         }
-        if (loopClip && time >= clip.end) {
-          video.currentTime = clip.start;
-          if (auxVideoRef.current) auxVideoRef.current.currentTime = clip.start;
+        if (loopClip && time >= clipEnd) {
+          video.currentTime = clipStart;
+          if (auxVideoRef.current) auxVideoRef.current.currentTime = clipStart;
         }
       }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [clip?.id, clip?.start, clip?.end, loopClip, previewMode, playing, onTimeUpdate]);
+  }, [clipId, clipStart, clipEnd, loopClip, previewMode, playing, onTimeUpdate]);
 
   function togglePlay() {
     const v = mainVideoRef.current;
@@ -157,11 +162,11 @@ export default function StudioPreview({
   const clipWords = useMemo(() => {
     if (!clip) return [];
     return getClipWords(project.transcript, clip.start, clip.end);
-  }, [project.transcript, clip?.start, clip?.end]);
+  }, [project.transcript, clip]);
 
   const activeCaptionGroup = useMemo(() => {
-    if (!clip || clip.style.caption_style === "off" || !clipWords.length) return null;
-    const chunkSize = Math.max(1, Math.min(6, clip.style.words_per_line || 3));
+    if (!clip || captionStyle === "off" || !clipWords.length) return null;
+    const chunkSize = Math.max(1, Math.min(6, wordsPerLine || 3));
     const idx = clipWords.findIndex(
       (w) => currentTime >= w.start - 0.05 && currentTime <= w.end + 0.08
     );
@@ -171,7 +176,7 @@ export default function StudioPreview({
       words: clipWords.slice(groupStart, groupStart + chunkSize),
       activeLocalIdx: idx - groupStart,
     };
-  }, [clipWords, currentTime, clip?.style?.caption_style, clip?.style?.words_per_line]);
+  }, [clip, clipWords, currentTime, captionStyle, wordsPerLine]);
 
   if (!clip) {
     return (
