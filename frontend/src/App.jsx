@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Sliders, FileText, Share2, X } from "lucide-react";
+import { Sliders, FileText, Share2 } from "lucide-react";
 import { api } from "./api";
+import { useTheme } from "./theme";
 import HeaderBar from "./components/HeaderBar";
-import IngestView from "./components/IngestView";
+import Dashboard from "./components/Dashboard";
+import SettingsPage from "./components/SettingsPage";
+import { Notice } from "./components/ui";
 import ClipListSidebar from "./components/ClipListSidebar";
 import StudioPreview from "./components/StudioPreview";
 import EditorControls from "./components/EditorControls";
 import TranscriptEditor from "./components/TranscriptEditor";
 import SocialMetadataPanel from "./components/SocialMetadataPanel";
-import SettingsModal from "./components/SettingsModal";
 
 // Server-owned export fields. While a render is running the poll only copies
 // these, so it can never overwrite edits the user is making locally.
@@ -26,11 +28,15 @@ export default function App() {
   const [activeProject, setActiveProject] = useState(null);
   const [selectedClipId, setSelectedClipId] = useState(null);
   const [inspectorTab, setInspectorTab] = useState("style"); // style | transcript | social
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [view, setView] = useState("home"); // home | studio | settings
+  const [settingsTab, setSettingsTab] = useState("engine");
+  const [settingsNonce, setSettingsNonce] = useState(0);
+  const { pref: themePref, setTheme, isDark } = useTheme();
   const [currentTime, setCurrentTime] = useState(0);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [actionError, setActionError] = useState("");
 
+  const settingsDirtyRef = useRef(false);
   const seekRef = useRef(null);
   const patchTimerRef = useRef(null);
   // clipId -> { projId, patch }: edits waiting for the debounce, merged per clip
@@ -90,6 +96,7 @@ export default function App() {
     null;
 
   function openProjectObj(proj) {
+    setView("studio");
     setActiveProject(proj);
     setSelectedClipId(proj.clips?.[0]?.id || null);
     setCurrentTime(proj.clips?.[0]?.start || 0);
@@ -115,7 +122,29 @@ export default function App() {
     if (activeProject?.id === id) {
       setActiveProject(null);
       setSelectedClipId(null);
+      setView("home");
     }
+  }
+
+  const handleSettingsDirty = useCallback((dirty) => {
+    settingsDirtyRef.current = dirty;
+  }, []);
+
+  // One place for every screen change, so unsaved settings are never lost silently.
+  function navigate(next, tab) {
+    if (next === "studio" && !activeProject) return;
+    if (view === "settings" && next !== "settings" && settingsDirtyRef.current) {
+      if (!window.confirm("You have unsaved settings. Leave without saving them?")) return;
+      settingsDirtyRef.current = false;
+    }
+    if (next === "settings" && view !== "settings") {
+      setSettingsTab(tab || "engine");
+      setSettingsNonce((n) => n + 1);
+    }
+    if (next === "home") {
+      api.listProjects().then(setProjects).catch(() => {});
+    }
+    setView(next);
   }
 
   function handleProjectCreated(proj) {
@@ -275,47 +304,52 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#0A0B0F] text-slate-100">
+    <div className="h-screen w-screen overflow-hidden flex flex-col bg-canvas text-ink">
       <HeaderBar
+        view={view}
         project={activeProject}
         settings={settings}
-        onGoHome={() => {
-          setActiveProject(null);
-          api.listProjects().then(setProjects).catch(() => {});
-        }}
-        onOpenSettings={() => setSettingsOpen(true)}
+        isDark={isDark}
+        onToggleTheme={() => setTheme(isDark ? "light" : "dark")}
+        onNavigate={navigate}
         onExportAll={handleExportAll}
         exportingAll={!!hasRendering}
       />
 
       {actionError && (
-        <div
-          role="alert"
-          className="flex items-start justify-between gap-3 px-4 py-2 text-xs text-rose-200 bg-rose-500/10 border-b border-rose-500/30"
-        >
-          <span className="leading-relaxed">{actionError}</span>
-          <button
-            type="button"
-            onClick={() => setActionError("")}
-            aria-label="Dismiss error"
-            className="shrink-0 p-0.5 rounded hover:bg-white/10 text-rose-200"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+        <div className="px-4 py-2 border-b border-line bg-surface">
+          <Notice tone="error" onDismiss={() => setActionError("")}>
+            {actionError}
+          </Notice>
         </div>
       )}
 
-      {!activeProject ? (
-        <IngestView
+      {view === "settings" && (
+        <SettingsPage
+          key={settingsNonce}
+          settings={settings}
+          initialTab={settingsTab}
+          onUpdated={(s) => setSettings(s)}
+          onDirtyChange={handleSettingsDirty}
+          themePref={themePref}
+          onThemeChange={setTheme}
+        />
+      )}
+
+      {view === "home" && (
+        <Dashboard
           projects={projects}
+          settings={settings}
           onProjectCreated={handleProjectCreated}
           onOpenProject={handleOpenProject}
           onDeleteProject={handleDeleteProject}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={(tab) => navigate("settings", tab)}
         />
-      ) : (
+      )}
+
+      {view === "studio" && activeProject && (
         <main className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
-          {/* Left: Ranked Viral Clips */}
+          {/* Left: ranked clips */}
           <ClipListSidebar
             project={activeProject}
             selectedClipId={selectedClip?.id}
@@ -330,7 +364,7 @@ export default function App() {
             reanalyzing={reanalyzing}
           />
 
-          {/* Center: 9:16 Phone Studio & Waveform */}
+          {/* Centre: 9:16 preview and waveform */}
           <StudioPreview
             project={activeProject}
             clip={selectedClip}
@@ -343,30 +377,32 @@ export default function App() {
             onUpdateStyle={(style) => patchSelectedClip({ style })}
           />
 
-          {/* Right: 3-Tab Inspector */}
-          <aside className="w-full lg:w-[340px] xl:w-[370px] shrink-0 border-l border-white/10 bg-[#0E1017] flex flex-col min-h-0">
-            <div className="grid grid-cols-3 border-b border-white/10 bg-[#0B0D13]">
+          {/* Right: inspector */}
+          <aside className="w-full lg:w-[340px] xl:w-[370px] shrink-0 border-l border-line bg-surface flex flex-col min-h-0">
+            <div role="tablist" aria-label="Clip inspector" className="grid grid-cols-3 border-b border-line bg-canvas/60">
               {[
                 { id: "style", label: "Style", Icon: Sliders },
                 { id: "transcript", label: "Captions", Icon: FileText },
-                { id: "social", label: "Social Kit", Icon: Share2 },
+                { id: "social", label: "Social kit", Icon: Share2 },
               ].map(({ id, label, Icon }) => (
                 <button
                   key={id}
+                  role="tab"
+                  aria-selected={inspectorTab === id}
                   onClick={() => setInspectorTab(id)}
-                  className={`py-3 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition ${
+                  className={`py-3 text-sm font-medium flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
                     inspectorTab === id
-                      ? "border-violet-500 text-white bg-white/[0.03]"
-                      : "border-transparent text-slate-400 hover:text-slate-200"
+                      ? "border-accent text-ink bg-raised"
+                      : "border-transparent text-muted hover:text-ink"
                   }`}
                 >
-                  <Icon className="w-3.5 h-3.5" />
+                  <Icon className="w-4 h-4" aria-hidden="true" />
                   <span>{label}</span>
                 </button>
               ))}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4">
+            <div role="tabpanel" className="flex-1 overflow-y-auto p-4">
               {inspectorTab === "style" && (
                 <EditorControls
                   clip={selectedClip}
@@ -401,13 +437,6 @@ export default function App() {
           </aside>
         </main>
       )}
-
-      <SettingsModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        settings={settings}
-        onUpdated={(s) => setSettings(s)}
-      />
     </div>
   );
 }

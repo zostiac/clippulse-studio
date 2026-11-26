@@ -250,12 +250,12 @@ export default function StudioPreview({
   }
 
   return (
-    <section className="flex-1 min-w-0 flex flex-col bg-[#0A0B0F] overflow-y-auto">
+    <section className="flex-1 min-w-0 flex flex-col bg-sunken overflow-y-auto">
       {/* Top Safe-Zone & Mode Bar */}
-      <div className="px-4 py-2.5 border-b border-white/10 bg-[#0E1017]/70 flex flex-wrap items-center justify-between gap-2">
+      <div className="px-4 py-2.5 border-b border-line bg-surface/70 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <Smartphone className="w-3.5 h-3.5 text-slate-400 mr-1" />
-          <span className="text-[11px] text-slate-400 hidden sm:inline mr-1">
+          <Smartphone className="w-3.5 h-3.5 text-muted mr-1" />
+          <span className="text-[11px] text-muted hidden sm:inline mr-1">
             Safe Zone:
           </span>
           {[
@@ -269,8 +269,8 @@ export default function StudioPreview({
               onClick={() => setSafeZone(id)}
               className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
                 safeZone === id
-                  ? "bg-violet-600 text-white"
-                  : "bg-white/5 text-slate-400 hover:text-white"
+                  ? "bg-accent text-on-accent"
+                  : "bg-ink/5 text-muted hover:text-ink"
               }`}
             >
               {label}
@@ -279,7 +279,7 @@ export default function StudioPreview({
         </div>
 
         {clip.export_status === "done" && clip.export_url && (
-          <div className="flex items-center gap-1 bg-[#141724] p-0.5 rounded-lg border border-white/10">
+          <div className="flex items-center gap-1 bg-raised p-0.5 rounded-lg border border-line">
             <button
               onClick={() => {
                 setPreviewMode("live");
@@ -287,8 +287,8 @@ export default function StudioPreview({
               }}
               className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
                 previewMode === "live"
-                  ? "bg-white/15 text-white"
-                  : "text-slate-400 hover:text-white"
+                  ? "bg-ink/15 text-ink"
+                  : "text-muted hover:text-ink"
               }`}
             >
               Live Editor
@@ -300,8 +300,8 @@ export default function StudioPreview({
               }}
               className={`px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center gap-1 transition ${
                 previewMode === "exported"
-                  ? "bg-emerald-600 text-white"
-                  : "text-emerald-300 hover:text-emerald-200"
+                  ? "bg-ok text-on-ok"
+                  : "text-ok hover:text-ok"
               }`}
             >
               <Eye className="w-3 h-3" />
@@ -482,7 +482,7 @@ export default function StudioPreview({
         <div className="mt-3 flex items-center gap-2">
           <button
             onClick={togglePlay}
-            className="px-3.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white text-xs font-medium flex items-center gap-1.5 transition"
+            className="px-3.5 py-1.5 rounded-lg bg-ink/10 hover:bg-ink/15 text-ink text-xs font-medium flex items-center gap-1.5 transition"
           >
             {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
             <span>{playing ? "Pause" : "Play"}</span>
@@ -490,7 +490,7 @@ export default function StudioPreview({
 
           <button
             onClick={() => setMuted((m) => !m)}
-            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10"
+            className="p-1.5 rounded-lg bg-ink/5 hover:bg-ink/10 text-muted border border-line"
             title={muted ? "Unmute" : "Mute"}
           >
             {muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
@@ -500,8 +500,8 @@ export default function StudioPreview({
             onClick={() => setLoopClip((l) => !l)}
             className={`px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 border transition ${
               loopClip
-                ? "bg-violet-500/20 text-violet-300 border-violet-500/40"
-                : "bg-white/5 text-slate-400 border-white/10"
+                ? "bg-accent/20 text-accent border-accent/40"
+                : "bg-ink/5 text-muted border-line"
             }`}
             title="Loop selected clip range"
           >
@@ -509,46 +509,46 @@ export default function StudioPreview({
             <span>Loop</span>
           </button>
 
-          <span className="ml-2 text-xs font-mono text-slate-400 tabular-nums">
+          <span className="ml-2 text-xs tabular-nums text-muted tabular-nums">
             {fmtTime(currentTime)} / {fmtTime(project.duration)}
           </span>
         </div>
       </div>
 
       {/* Bottom Waveform Scrubber + Export Bar */}
-      <div className="border-t border-white/10 bg-[#0E1017] p-3.5 space-y-3">
+      <div className="border-t border-line bg-surface p-3.5 space-y-3">
         {/* Audio Energy Waveform Timeline */}
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-[11px] text-slate-400">
-            <div className="flex items-center gap-2 font-mono">
-              <span className="text-violet-300 font-semibold">
+          <div className="flex items-center justify-between text-[11px] text-muted">
+            <div className="flex items-center gap-2 tabular-nums">
+              <span className="text-accent font-semibold">
                 Clip: {fmtTime(clip.start)} – {fmtTime(clip.end)}
               </span>
-              <span className="text-slate-500">({clipDur.toFixed(1)}s)</span>
+              <span className="text-faint">({clipDur.toFixed(1)}s)</span>
             </div>
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => onNudgeStart(-0.5)}
-                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[10px] font-mono text-slate-300"
+                className="px-1.5 py-0.5 rounded bg-ink/5 hover:bg-ink/10 text-[10px] tabular-nums text-muted"
               >
                 Start -0.5s
               </button>
               <button
                 onClick={() => onNudgeStart(0.5)}
-                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[10px] font-mono text-slate-300"
+                className="px-1.5 py-0.5 rounded bg-ink/5 hover:bg-ink/10 text-[10px] tabular-nums text-muted"
               >
                 +0.5s
               </button>
-              <span className="text-slate-700">|</span>
+              <span className="text-faint">|</span>
               <button
                 onClick={() => onNudgeEnd(-0.5)}
-                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[10px] font-mono text-slate-300"
+                className="px-1.5 py-0.5 rounded bg-ink/5 hover:bg-ink/10 text-[10px] tabular-nums text-muted"
               >
                 End -0.5s
               </button>
               <button
                 onClick={() => onNudgeEnd(0.5)}
-                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[10px] font-mono text-slate-300"
+                className="px-1.5 py-0.5 rounded bg-ink/5 hover:bg-ink/10 text-[10px] tabular-nums text-muted"
               >
                 +0.5s
               </button>
@@ -562,13 +562,13 @@ export default function StudioPreview({
               const targetT = ratio * (project.duration || 1);
               if (onSeekRef?.current) onSeekRef.current(targetT);
             }}
-            className="relative h-12 rounded-lg bg-[#0A0B0F] border border-white/10 px-1.5 flex items-center gap-[2px] cursor-pointer overflow-hidden"
+            className="relative h-12 rounded-lg bg-sunken border border-line px-1.5 flex items-center gap-[2px] cursor-pointer overflow-hidden"
             title="Click anywhere on waveform to seek"
           >
             {/* Active clip highlight window */}
             {project.duration > 0 && (
               <div
-                className="absolute top-0 bottom-0 bg-violet-500/18 border-x border-violet-400/70 pointer-events-none"
+                className="absolute top-0 bottom-0 bg-accent/18 border-x border-accent/70 pointer-events-none"
                 style={{
                   left: `${(clip.start / project.duration) * 100}%`,
                   width: `${((clip.end - clip.start) / project.duration) * 100}%`,
@@ -585,7 +585,7 @@ export default function StudioPreview({
                   <div
                     key={idx}
                     className={`flex-1 rounded-full transition-colors ${
-                      inClip ? "bg-violet-400" : "bg-slate-700/70"
+                      inClip ? "bg-accent" : "bg-ink/20"
                     }`}
                     style={{ height: `${Math.max(14, Math.round(val * 88))}%` }}
                   />
@@ -596,7 +596,7 @@ export default function StudioPreview({
             {/* Playhead */}
             {project.duration > 0 && (
               <div
-                className="absolute top-0 bottom-0 w-0.5 bg-cyan-300 shadow-[0_0_8px_#22d3ee] pointer-events-none"
+                className="absolute top-0 bottom-0 w-0.5 bg-mark pointer-events-none"
                 style={{
                   left: `${Math.min(100, Math.max(0, (currentTime / project.duration) * 100))}%`,
                 }}
@@ -608,11 +608,11 @@ export default function StudioPreview({
         {/* Export Action Row */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">Output:</span>
+            <span className="text-xs text-muted">Output:</span>
             <select
               value={style.resolution || "1080x1920"}
               onChange={(e) => onUpdateStyle({ ...style, resolution: e.target.value })}
-              className="px-2.5 py-1.5 rounded-lg bg-[#0A0B0F] border border-white/10 text-xs text-white focus:outline-none focus:border-violet-500"
+              className="px-2.5 py-1.5 rounded-lg bg-sunken border border-line text-xs text-ink focus:outline-none focus:border-accent"
             >
               <option value="1080x1920">1080×1920 (Full HD 9:16)</option>
               <option value="720x1280">720×1280 (Fast Export)</option>
@@ -623,7 +623,7 @@ export default function StudioPreview({
             <button
               onClick={onExportClip}
               disabled={clip.export_status === "rendering"}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-500 hover:to-cyan-400 disabled:opacity-60 text-white text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-violet-600/20"
+              className="px-4 py-2 rounded-xl bg-accent hover:bg-accent-hover disabled:opacity-60 text-on-accent text-xs font-semibold flex items-center gap-2 transition shadow-lg "
             >
               {clip.export_status === "rendering" ? (
                 <>
@@ -644,7 +644,7 @@ export default function StudioPreview({
               <a
                 href={`${clip.export_url}?download=1`}
                 download={clip.export_filename || `${clip.id}.mp4`}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition"
+                className="px-4 py-2 rounded-xl bg-ok hover:brightness-110 text-on-ok text-xs font-semibold flex items-center gap-1.5 transition"
               >
                 <Download className="w-4 h-4" />
                 <span>Download MP4</span>
@@ -654,7 +654,7 @@ export default function StudioPreview({
         </div>
 
         {clip.export_status === "error" && clip.export_error && (
-          <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg px-3 py-2">
+          <div className="text-xs text-bad bg-bad/10 border border-bad/20 rounded-lg px-3 py-2">
             {clip.export_error}
           </div>
         )}

@@ -78,15 +78,21 @@ clippulse-studio/
 │   ├── src/
 │   │   ├── App.jsx       # Main app — state, routing, 3-panel studio
 │   │   ├── api.js        # Fetch wrapper with timeout/abort
+│   │   ├── engine.js     # AI provider catalogue, caption styles, layouts
+│   │   ├── theme.js      # Light/dark/system theme (data-theme + localStorage)
 │   │   ├── components/
-│   │   │   ├── HeaderBar.jsx
-│   │   │   ├── IngestView.jsx
+│   │   │   ├── HeaderBar.jsx       # Nav, engine chip, theme toggle
+│   │   │   ├── Dashboard.jsx       # Home: stats + new project + project grid
+│   │   │   ├── StatsSlate.jsx      # Projects / clips / exported / average score
+│   │   │   ├── NewProject.jsx      # 3-step guided flow (source, details, start)
+│   │   │   ├── ProjectGrid.jsx     # Search, sort, delete-with-confirm
+│   │   │   ├── SettingsPage.jsx    # Full-page settings with side tabs
+│   │   │   ├── ui.jsx              # Button, Notice, Field, Toggle, Segmented
 │   │   │   ├── ClipListSidebar.jsx
 │   │   │   ├── StudioPreview.jsx   # 9:16 phone preview + waveform scrubber
 │   │   │   ├── EditorControls.jsx  # Layout, captions, pan, hook banner
 │   │   │   ├── TranscriptEditor.jsx
-│   │   │   ├── SocialMetadataPanel.jsx
-│   │   │   └── SettingsModal.jsx
+│   │   │   └── SocialMetadataPanel.jsx
 │   │   ├── index.css     # Tailwind v4 + custom styles
 │   │   └── main.jsx
 │   ├── package.json

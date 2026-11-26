@@ -19,19 +19,19 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
   return (
     <div className="space-y-4">
       {/* Platform Selector */}
-      <div className="grid grid-cols-3 gap-1.5 bg-[#0A0B0F] p-1 rounded-xl border border-white/10">
+      <div className="grid grid-cols-3 gap-1.5 bg-sunken p-1 rounded-xl border border-line">
         {[
-          { id: "youtube", label: "YT Shorts", Icon: Youtube, color: "text-rose-400" },
-          { id: "instagram", label: "IG Reels", Icon: Instagram, color: "text-fuchsia-400" },
-          { id: "tiktok", label: "TikTok", Icon: Music2, color: "text-cyan-400" },
+          { id: "youtube", label: "YT Shorts", Icon: Youtube, color: "text-bad" },
+          { id: "instagram", label: "IG Reels", Icon: Instagram, color: "text-accent" },
+          { id: "tiktok", label: "TikTok", Icon: Music2, color: "text-accent" },
         ].map(({ id, label, Icon, color }) => (
           <button
             key={id}
             onClick={() => setPlatform(id)}
             className={`py-2 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition ${
               platform === id
-                ? "bg-white/10 text-white shadow-sm"
-                : "text-slate-400 hover:text-slate-200"
+                ? "bg-ink/10 text-ink shadow-sm"
+                : "text-muted hover:text-ink"
             }`}
           >
             <Icon className={`w-3.5 h-3.5 ${color}`} />
@@ -44,12 +44,12 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
         <div className="space-y-3">
           <div className="space-y-1">
             <div className="flex justify-between items-center">
-              <label className="text-[11px] font-medium text-slate-400">
+              <label className="text-[11px] font-medium text-muted">
                 Shorts Title
               </label>
               <button
                 onClick={() => copyText("yt_t", meta.youtube_title || "")}
-                className="text-[10px] text-cyan-300 hover:text-cyan-200 flex items-center gap-1"
+                className="text-[10px] text-accent hover:text-accent-hover flex items-center gap-1"
               >
                 {copiedKey === "yt_t" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 {copiedKey === "yt_t" ? "Copied" : "Copy"}
@@ -59,18 +59,18 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
               type="text"
               value={meta.youtube_title || ""}
               onChange={(e) => update({ youtube_title: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl bg-[#0A0B0F] border border-white/10 text-xs text-white focus:outline-none focus:border-violet-500"
+              className="w-full px-3 py-2 rounded-xl bg-sunken border border-line text-xs text-ink focus:outline-none focus:border-accent"
             />
           </div>
 
           <div className="space-y-1">
             <div className="flex justify-between items-center">
-              <label className="text-[11px] font-medium text-slate-400">
+              <label className="text-[11px] font-medium text-muted">
                 Description
               </label>
               <button
                 onClick={() => copyText("yt_d", meta.youtube_description || "")}
-                className="text-[10px] text-cyan-300 hover:text-cyan-200 flex items-center gap-1"
+                className="text-[10px] text-accent hover:text-accent-hover flex items-center gap-1"
               >
                 {copiedKey === "yt_d" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 {copiedKey === "yt_d" ? "Copied" : "Copy"}
@@ -80,18 +80,18 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
               rows={5}
               value={meta.youtube_description || ""}
               onChange={(e) => update({ youtube_description: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl bg-[#0A0B0F] border border-white/10 text-xs text-slate-200 focus:outline-none focus:border-violet-500"
+              className="w-full px-3 py-2 rounded-xl bg-sunken border border-line text-xs text-ink focus:outline-none focus:border-accent"
             />
           </div>
 
           <div className="space-y-1.5">
             <div className="flex justify-between items-center">
-              <label className="text-[11px] font-medium text-slate-400">
+              <label className="text-[11px] font-medium text-muted">
                 Tags
               </label>
               <button
                 onClick={() => copyText("yt_tags", (meta.youtube_tags || []).join(", "))}
-                className="text-[10px] text-cyan-300 hover:text-cyan-200 flex items-center gap-1"
+                className="text-[10px] text-accent hover:text-accent-hover flex items-center gap-1"
               >
                 {copiedKey === "yt_tags" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 {copiedKey === "yt_tags" ? "Copied" : "Copy All"}
@@ -101,7 +101,7 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
               {(meta.youtube_tags || []).map((tag, i) => (
                 <span
                   key={i}
-                  className="text-[11px] px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-slate-300"
+                  className="text-[11px] px-2 py-0.5 rounded-md bg-ink/5 border border-line text-muted"
                 >
                   #{tag}
                 </span>
@@ -115,7 +115,7 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
         <div className="space-y-3">
           <div className="space-y-1">
             <div className="flex justify-between items-center">
-              <label className="text-[11px] font-medium text-slate-400">
+              <label className="text-[11px] font-medium text-muted">
                 Reels Caption
               </label>
               <button
@@ -125,7 +125,7 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
                     `${meta.instagram_caption || ""}\n\n${(meta.instagram_hashtags || []).join(" ")}`
                   )
                 }
-                className="text-[10px] text-cyan-300 hover:text-cyan-200 flex items-center gap-1"
+                className="text-[10px] text-accent hover:text-accent-hover flex items-center gap-1"
               >
                 {copiedKey === "ig" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 {copiedKey === "ig" ? "Copied" : "Copy Caption + Tags"}
@@ -135,7 +135,7 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
               rows={6}
               value={meta.instagram_caption || ""}
               onChange={(e) => update({ instagram_caption: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl bg-[#0A0B0F] border border-white/10 text-xs text-slate-200 focus:outline-none focus:border-fuchsia-500"
+              className="w-full px-3 py-2 rounded-xl bg-sunken border border-line text-xs text-ink focus:outline-none focus:border-accent"
             />
           </div>
 
@@ -143,7 +143,7 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
             {(meta.instagram_hashtags || []).map((tag, i) => (
               <span
                 key={i}
-                className="text-[11px] px-2 py-0.5 rounded-md bg-fuchsia-500/10 border border-fuchsia-500/25 text-fuchsia-300"
+                className="text-[11px] px-2 py-0.5 rounded-md bg-accent/10 border border-accent/25 text-accent"
               >
                 {tag}
               </span>
@@ -156,7 +156,7 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
         <div className="space-y-3">
           <div className="space-y-1">
             <div className="flex justify-between items-center">
-              <label className="text-[11px] font-medium text-slate-400">
+              <label className="text-[11px] font-medium text-muted">
                 TikTok Caption
               </label>
               <button
@@ -166,7 +166,7 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
                     `${meta.tiktok_caption || ""}\n\n${(meta.tiktok_hashtags || []).join(" ")}`
                   )
                 }
-                className="text-[10px] text-cyan-300 hover:text-cyan-200 flex items-center gap-1"
+                className="text-[10px] text-accent hover:text-accent-hover flex items-center gap-1"
               >
                 {copiedKey === "tt" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 {copiedKey === "tt" ? "Copied" : "Copy Caption + Tags"}
@@ -176,7 +176,7 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
               rows={4}
               value={meta.tiktok_caption || ""}
               onChange={(e) => update({ tiktok_caption: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl bg-[#0A0B0F] border border-white/10 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+              className="w-full px-3 py-2 rounded-xl bg-sunken border border-line text-xs text-ink focus:outline-none focus:border-accent"
             />
           </div>
 
@@ -184,7 +184,7 @@ export default function SocialMetadataPanel({ clip, onUpdateMeta }) {
             {(meta.tiktok_hashtags || []).map((tag, i) => (
               <span
                 key={i}
-                className="text-[11px] px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/25 text-cyan-300"
+                className="text-[11px] px-2 py-0.5 rounded-md bg-accent/10 border border-accent/25 text-accent"
               >
                 {tag}
               </span>

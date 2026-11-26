@@ -1,29 +1,166 @@
 @import "tailwindcss";
 
+/*
+  Design tokens. Components never use raw hex values: they use the semantic
+  utilities below (bg-canvas, bg-surface, text-ink, border-line, bg-accent ...),
+  so the light and dark themes stay in step.
+*/
+@theme inline {
+  --color-canvas: var(--c-canvas);
+  --color-surface: var(--c-surface);
+  --color-raised: var(--c-raised);
+  --color-sunken: var(--c-sunken);
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+  --color-ink: var(--c-ink);
+  --color-muted: var(--c-muted);
+  --color-faint: var(--c-faint);
+  --color-accent: var(--c-accent);
+  --color-accent-hover: var(--c-accent-hover);
+  --color-on-accent: var(--c-on-accent);
+  --color-mark: var(--c-mark);
+  --color-ok: var(--c-ok);
+  --color-on-ok: var(--c-on-ok);
+  --color-warn: var(--c-warn);
+  --color-bad: var(--c-bad);
+
+  --font-display: "Bricolage Grotesque", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --c-canvas: #e7ebef;
+  --c-surface: #f3f5f7;
+  --c-raised: #ffffff;
+  --c-sunken: #eceff2;
+  --c-line: #d0d7de;
+  --c-line-strong: #aeb8c3;
+  --c-ink: #141b25;
+  --c-muted: #4f5c6c;
+  --c-faint: #6f7b8a;
+  --c-accent: #2b43e6;
+  --c-accent-hover: #1f34c4;
+  --c-on-accent: #ffffff;
+  --c-mark: #e9a900;
+  --c-ok: #137a52;
+  --c-on-ok: #ffffff;
+  --c-warn: #9a5b00;
+  --c-bad: #bf2640;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --c-canvas: #0c1016;
+  --c-surface: #131920;
+  --c-raised: #1a222c;
+  --c-sunken: #090c11;
+  --c-line: #29323e;
+  --c-line-strong: #3d4958;
+  --c-ink: #e8edf3;
+  --c-muted: #a2aebd;
+  --c-faint: #7b8898;
+  --c-accent: #8393ff;
+  --c-accent-hover: #9ba8ff;
+  --c-on-accent: #0c1016;
+  --c-mark: #f5bf1f;
+  --c-ok: #46c692;
+  --c-on-ok: #06241a;
+  --c-warn: #f0aa4a;
+  --c-bad: #ff7388;
+}
+
 @layer base {
   body {
-    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background-color: #0A0B0F;
-    color: #F1F5F9;
+    font-family: var(--font-sans);
+    background-color: var(--c-canvas);
+    color: var(--c-ink);
+    font-feature-settings: "tnum" 0;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+
+  /* Keyboard focus is always visible, mouse clicks stay quiet */
+  :focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  button,
+  [role="button"],
+  summary {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
   }
 }
 
-/* Custom sleek scrollbars */
+/* Custom scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.18);
+  background: color-mix(in oklab, var(--c-ink) 22%, transparent);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.35);
+  background: color-mix(in oklab, var(--c-ink) 38%, transparent);
 }
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/*
+  The slate: the dashboard stat strip borrows the diagonal-striped clapperboard
+  arm. The same stripe, animated, marks work in progress.
+*/
+.slate-arm {
+  height: 10px;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--c-ink) 0 14px,
+    var(--c-raised) 14px 28px
+  );
+}
+
+.working-bar {
+  height: 8px;
+  border-radius: 9999px;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--c-accent) 0 10px,
+    color-mix(in oklab, var(--c-accent) 22%, transparent) 10px 20px
+  );
+  background-size: 28.28px 28.28px;
+  animation: working-bar-slide 900ms linear infinite;
+}
+
+@keyframes working-bar-slide {
+  to {
+    background-position: 28.28px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .working-bar {
+    animation: none;
+  }
+  * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

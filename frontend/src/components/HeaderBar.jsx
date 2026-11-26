@@ -1,134 +1,135 @@
 import React from "react";
-import {
-  Scissors,
-  Plus,
-  Settings,
-  Sparkles,
-  Download,
-  Layers,
-  Cpu,
-  CheckCircle2,
-} from "lucide-react";
+import { Settings, Download, Layers, Sun, Moon, FolderOpen, Film, Cpu } from "lucide-react";
+import { engineLabel } from "../engine";
+
+/** The mark: a rounded square holding a single pulse line. */
+function Mark({ className = "" }) {
+  return (
+    <svg viewBox="0 0 32 32" className={className} aria-hidden="true">
+      <rect width="32" height="32" rx="8" className="fill-ink" />
+      <path
+        d="M4.5 17.5h6l2.6-8.5 4.4 15 3-9.5 1.5 3h5.5"
+        fill="none"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="stroke-mark"
+      />
+    </svg>
+  );
+}
+
+function NavButton({ active, onClick, icon: Icon, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+        active ? "bg-ink text-canvas" : "text-muted hover:text-ink hover:bg-ink/8"
+      }`}
+    >
+      <Icon className="w-4 h-4" aria-hidden="true" />
+      <span className="hidden sm:inline">{children}</span>
+    </button>
+  );
+}
 
 export default function HeaderBar({
+  view,
   project,
   settings,
-  onGoHome,
-  onOpenSettings,
+  isDark,
+  onToggleTheme,
+  onNavigate,
   onExportAll,
   exportingAll,
 }) {
-  const exportedCount = project
-    ? project.clips.filter((c) => c.export_status === "done").length
-    : 0;
+  const exportedCount = project ? project.clips.filter((c) => c.export_status === "done").length : 0;
+  const inStudio = view === "studio" && !!project;
 
   return (
-    <header className="h-14 shrink-0 border-b border-white/10 bg-[#0E1017]/95 backdrop-blur px-4 flex items-center justify-between gap-3 z-30">
-      <div className="flex items-center gap-3 min-w-0">
+    <header className="h-14 shrink-0 border-b border-line bg-surface px-3 sm:px-4 flex items-center justify-between gap-3 z-30">
+      <div className="flex items-center gap-2 sm:gap-4 min-w-0">
         <button
-          onClick={onGoHome}
-          className="flex items-center gap-2.5 group focus:outline-none"
-          title="Back to Projects"
+          type="button"
+          onClick={() => onNavigate("home")}
+          className="flex items-center gap-2.5 shrink-0"
+          aria-label="ClipPulse Studio home"
         >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-violet-500/20 group-hover:scale-105 transition-transform">
-            <Scissors className="w-4 h-4 text-white" />
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="font-bold tracking-tight text-white text-base">
-              ClipPulse
-            </span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 border border-violet-500/25">
-              Studio
-            </span>
-          </div>
+          <Mark className="w-8 h-8" />
+          <span className="hidden sm:inline font-display font-bold text-lg tracking-tight text-ink">ClipPulse</span>
         </button>
 
-        {project && (
-          <>
-            <span className="text-slate-600 hidden sm:inline">/</span>
-            <div className="hidden sm:flex items-center gap-2 min-w-0">
-              <span className="text-sm font-medium text-slate-200 truncate max-w-[260px] md:max-w-[380px]">
-                {project.title}
-              </span>
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/5 text-slate-400 border border-white/10 shrink-0">
-                {project.clips.length} clips
-              </span>
-            </div>
-          </>
+        <nav aria-label="Main" className="flex items-center gap-1">
+          <NavButton active={view === "home"} onClick={() => onNavigate("home")} icon={FolderOpen}>
+            Projects
+          </NavButton>
+          {project && (
+            <NavButton active={view === "studio"} onClick={() => onNavigate("studio")} icon={Film}>
+              Studio
+            </NavButton>
+          )}
+          <NavButton active={view === "settings"} onClick={() => onNavigate("settings")} icon={Settings}>
+            Settings
+          </NavButton>
+        </nav>
+
+        {inStudio && (
+          <span
+            className="hidden md:block truncate max-w-[260px] lg:max-w-[420px] text-sm text-muted border-l border-line pl-4"
+            title={project.title}
+          >
+            {project.title}
+          </span>
         )}
       </div>
 
       <div className="flex items-center gap-2">
         <button
-          onClick={onOpenSettings}
-          className={`hidden md:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition hover:brightness-110 ${
-            settings?.has_api_key && settings?.ai_provider !== "local_free"
-              ? "bg-cyan-500/10 text-cyan-300 border-cyan-500/25"
-              : "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"
-          }`}
-          title="Click to configure Free AI Provider or Local Whisper"
+          type="button"
+          onClick={() => onNavigate("settings", "engine")}
+          className="hidden lg:flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-line text-muted hover:text-ink hover:border-line-strong transition-colors"
+          title="Open engine settings"
         >
-          {settings?.has_api_key && settings?.ai_provider !== "local_free" ? (
-            <Sparkles className="w-3.5 h-3.5" />
-          ) : (
-            <Cpu className="w-3.5 h-3.5" />
-          )}
-          <span>
-            {settings?.ai_provider === "groq" && settings?.has_api_key
-              ? "Groq Free AI"
-              : settings?.ai_provider === "gemini" && settings?.has_api_key
-              ? "Gemini Free AI"
-              : settings?.ai_provider === "openrouter" && settings?.has_api_key
-              ? "OpenRouter Free"
-              : settings?.ai_provider === "openai" && settings?.has_api_key
-              ? "OpenAI BYOK"
-              : "100% Free Local AI"}
-          </span>
+          <Cpu className="w-3.5 h-3.5" aria-hidden="true" />
+          <span>Engine: {engineLabel(settings)}</span>
         </button>
 
-        {project && (
+        {inStudio && (
           <>
             <button
-              onClick={onGoHome}
-              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 transition"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">New Video</span>
-            </button>
-
-            <button
+              type="button"
               onClick={onExportAll}
               disabled={exportingAll || project.clips.length === 0}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white transition shadow-sm shadow-violet-600/30"
+              className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-hover text-on-accent transition-colors disabled:opacity-50"
             >
-              <Layers className="w-3.5 h-3.5" />
-              <span>{exportingAll ? "Rendering..." : "Export All"}</span>
+              <Layers className="w-4 h-4" aria-hidden="true" />
+              <span>{exportingAll ? "Rendering..." : "Export all"}</span>
             </button>
 
             {exportedCount > 0 && (
               <a
                 href={`/api/projects/${project.id}/download-bundle`}
-                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white transition"
-                title="Download all exported MP4s + YT/IG/TikTok captions as ZIP"
+                className="flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-lg bg-ok text-on-ok hover:brightness-110 transition"
+                title="Download the exported MP4s and the YouTube, Instagram and TikTok captions as a ZIP"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span className="hidden lg:inline">
-                  ZIP ({exportedCount})
-                </span>
+                <Download className="w-4 h-4" aria-hidden="true" />
+                <span className="hidden sm:inline">Download ZIP ({exportedCount})</span>
+                <span className="sm:hidden">{exportedCount}</span>
               </a>
             )}
           </>
         )}
 
         <button
-          onClick={onOpenSettings}
-          className="relative p-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition"
-          title="Settings: OpenAI API Key & YouTube Cookies"
+          type="button"
+          onClick={onToggleTheme}
+          aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+          title={isDark ? "Switch to light theme" : "Switch to dark theme"}
+          className="p-2 rounded-lg border border-line text-muted hover:text-ink hover:border-line-strong transition-colors"
         >
-          <Settings className="w-4 h-4" />
-          {settings?.has_youtube_cookies && (
-            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400 absolute -top-0.5 -right-0.5 bg-[#0E1017] rounded-full" />
-          )}
+          {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>
       </div>
     </header>
