@@ -200,12 +200,12 @@ export default function SocialKit() {
     return (
       <div className="flex items-center justify-center h-[70vh]">
         <div className="bg-white p-8 rounded-xl border border-line shadow-sm text-center max-w-md">
-          <h2 className="text-xl font-semibold text-ink mb-2">No clip selected</h2>
-          <p className="text-sm text-ink-muted mb-4">Open a project in the editor first, then launch the Social Distribution Kit.</p>
+          <h2 className="font-title-md text-title-md text-ink mb-2">No clip selected</h2>
+          <p className="font-body-md text-body-md text-ink-muted mb-4">Open a project in the editor first, then launch the Social Distribution Kit.</p>
           <button
             type="button"
             onClick={() => navigate(routeTo("editor", projectId || undefined))}
-            className="px-5 py-2 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-deep transition-colors"
+            className="px-5 py-2 rounded-lg bg-accent text-white font-title-sm text-title-sm font-semibold hover:bg-accent-deep transition-colors"
           >
             Open Editor
           </button>
@@ -517,7 +517,7 @@ export default function SocialKit() {
           <div className="lg:col-span-7 flex flex-col gap-4">
             {/* channel tabs */}
             <div className="p-1 rounded bg-white border border-line shadow-sm flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-1">
                 {CHANNEL_TABS.map((tab) => (
                   <button
                     key={tab.key}
@@ -529,9 +529,9 @@ export default function SocialKit() {
                         : "hover:bg-cloud text-ink-muted hover:text-ink"
                     }`}
                   >
-                    <span className={`w-2 h-2 rounded-full ${tab.dot}`} />
-                    <span>{tab.label}</span>
-                    <span className="font-label-code-sm text-label-code-sm text-ink-faint">{tab.handle}</span>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${tab.dot}`} />
+                    <span className="whitespace-nowrap">{tab.label}</span>
+                    <span className="font-label-code-sm text-label-code-sm text-ink-faint hidden xl:inline">{tab.handle}</span>
                   </button>
                 ))}
               </div>
@@ -543,7 +543,7 @@ export default function SocialKit() {
 
             {channel === "linkedin" ? (
               <div className="p-4 rounded bg-white border border-line shadow-sm">
-                <p className="text-sm text-ink-muted">
+                <p className="font-body-md text-body-md text-ink-muted">
                   LinkedIn publishing runs in <span className="font-semibold text-ink">BYOK mode</span> — bring your own
                   OAuth app in Settings to enable dispatch. The metadata pack covers LinkedIn descriptions too.
                 </p>
@@ -945,7 +945,7 @@ export default function SocialKit() {
                   onClick={downloadMp4}
                   className="px-5 py-2 rounded bg-accent text-white hover:bg-accent-deep font-title-sm text-title-sm font-bold shadow-md active:scale-95 transition-all flex items-center gap-2"
                 >
-                  <span>Publish to YouTube Shorts</span>
+                  <span>{clip.export_status === "done" ? "Download 9:16 MP4" : "Render & Download 9:16 MP4"}</span>
                   <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
                 </button>
               </div>

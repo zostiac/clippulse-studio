@@ -15,7 +15,7 @@ const LAYOUTS = [
 const CAPTION_STYLES = [
   { key: "hormozi", label: "Hormozi Pop", tag: "WORD POP", tagClass: "bg-primary-container text-on-primary-container", hint: "Gold Box" },
   { key: "beast", label: "Beast Clean", tag: "CRISP CYAN", tagClass: "bg-tertiary-fixed text-on-tertiary-fixed", hint: "Shadowed" },
-  { key: "minimal", label: "Minimal Pill", tag: "SOFT VIOLET", tagClass: "bg-secondary-fixed text-on-secondary-fixed-variant", hint: "Pill" },
+  { key: "minimal", label: "Minimal Pill", tag: "SOFT AMBER", tagClass: "bg-primary-fixed text-on-primary-fixed-variant", hint: "Pill" },
   { key: "neon", label: "Neon Creator", tag: "NEON POP", tagClass: "bg-surface-container-highest text-on-surface", hint: "Glow" },
   { key: "off", label: "Captions Off", tag: "CLEAN", tagClass: "bg-surface-container text-on-surface-variant", hint: "None" },
 ];
@@ -674,13 +674,6 @@ export default function Editor() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={togglePlay}
-                className="px-space-md py-2 rounded-lg bg-surface-container text-on-surface font-body-sm text-body-sm font-semibold hover:bg-surface-container-high transition-colors"
-              >
-                Preview Render
-              </button>
               {exported && clip?.export_url ? (
                 <a
                   href={clip.export_url}

@@ -27,6 +27,12 @@ export default function TopHeader({ variant = "material", onMenu }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const onSearchKeyDown = (e) => {
+    if (e.key === "Enter") {
+      navigate(routeTo("projects"));
+    }
+  };
+
   const onExportAll = async () => {
     if (route.name === "editor" && route.projectId) {
       await exportAll(route.projectId);
@@ -70,10 +76,11 @@ export default function TopHeader({ variant = "material", onMenu }) {
               ref={searchRef}
               id="cp-search"
               className="w-full bg-paper-cool border border-line rounded pl-8 pr-8 py-1 font-label-code-md text-label-code-md text-ink placeholder:text-ink-faint focus:bg-white focus:border-accent transition-colors"
-              placeholder="Search clips, markers, projects..."
+              placeholder="Search clips, markers, transcripts..."
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={onSearchKeyDown}
             />
             <kbd className="absolute right-2 top-1/2 -translate-y-1/2 font-label-code-sm text-label-code-sm text-ink-muted bg-white px-1 py-0.5 rounded border border-line">
               ⌘K
@@ -140,6 +147,7 @@ export default function TopHeader({ variant = "material", onMenu }) {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={onSearchKeyDown}
           />
           <span className="absolute right-space-sm px-1.5 py-0.5 rounded bg-surface-container font-label-sm text-label-sm text-on-surface-variant">
             ⌘K
@@ -154,9 +162,12 @@ export default function TopHeader({ variant = "material", onMenu }) {
         <button
           type="button"
           onClick={onExportAll}
-          className="hidden sm:flex px-space-md py-1.5 rounded-lg bg-surface-container-lowest text-on-surface font-body-sm text-body-sm hover:bg-surface-container-high transition-colors shadow-[0_1px_4px_rgba(0,0,0,0.02)] items-center gap-space-xs"
+          disabled={busy[`export_all_${route.projectId}`]}
+          className="hidden sm:flex px-space-md py-1.5 rounded-lg bg-surface-container-lowest text-on-surface font-body-sm text-body-sm hover:bg-surface-container-high transition-colors shadow-[0_1px_4px_rgba(0,0,0,0.02)] items-center gap-space-xs disabled:opacity-60"
         >
-          <span className="material-symbols-outlined text-[16px]">file_upload</span>
+          <span className="material-symbols-outlined text-[16px]">
+            {busy[`export_all_${route.projectId}`] ? "progress_activity" : "file_upload"}
+          </span>
           <span>Export All</span>
         </button>
         <button

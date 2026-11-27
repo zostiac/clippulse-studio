@@ -103,7 +103,7 @@ export default function Waveform({
         {/* Selected range */}
         <div
           className="absolute top-0 bottom-0 bg-primary-container/15 rounded border-x-2 border-primary-container flex justify-between items-center px-1"
-          style={{ left: `${selLeft}%`, width: `${Math.max(0, selRight - selLeft)}%` }}
+          style={{ left: `${selLeft}%`, width: `${Math.max(0, selRight - selLeft)}%`, minWidth: "16px" }}
         >
           <button
             type="button"
@@ -126,9 +126,6 @@ export default function Waveform({
       </div>
       <div className="flex items-center justify-between font-label-sm text-label-sm text-on-surface-variant px-1">
         <span>00:00</span>
-        <span className="font-semibold text-on-surface">
-          Selection: {fmtTC(start)} → {fmtTC(end)} ({Math.max(0, end - start).toFixed(1)}s)
-        </span>
         <span>{fmtTC(duration)}</span>
       </div>
     </div>

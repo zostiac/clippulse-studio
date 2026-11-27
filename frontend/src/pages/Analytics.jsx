@@ -6,8 +6,17 @@ const RANGES = [
   { key: "7", label: "Last 7 Days" },
   { key: "30", label: "Last 30 Days" },
   { key: "quarter", label: "This Quarter" },
-  { key: "custom", label: "Custom" },
 ];
+
+function fmtDelta(v) {
+  return `${v >= 0 ? "+" : "\u2212"}${Math.abs(v).toFixed(1)}%`;
+}
+
+function platformChipsFor(sourceType) {
+  if (sourceType === "youtube") return ["YT Shorts", "IG Reels"];
+  if (sourceType === "upload") return ["TikTok", "IG Reels"];
+  return ["YT Shorts", "TikTok"];
+}
 
 function Sparkline({ values = [], color = "var(--color-accent)" }) {
   const max = Math.max(1, ...values);
@@ -22,10 +31,11 @@ function Sparkline({ values = [], color = "var(--color-accent)" }) {
 }
 
 export default function Analytics() {
-  const { analytics, navigate, refreshAnalytics } = useStudio();
+  const { analytics, projects, navigate, refreshAnalytics } = useStudio();
   const [range, setRange] = useState("30");
   const [page, setPage] = useState(0);
   const [filterText, setFilterText] = useState("");
+  const [sortDesc, setSortDesc] = useState(true);
 
   const data = analytics;
   const retention = data?.retention || { hold_0_3s: 0, completion: 0, points: [] };
@@ -38,8 +48,8 @@ export default function Analytics() {
         (c) => c.title.toLowerCase().includes(q) || c.project_title.toLowerCase().includes(q)
       );
     }
-    return list;
-  }, [data, filterText]);
+    return [...list].sort((a, b) => (sortDesc ? b.hook_hold_est - a.hook_hold_est : a.hook_hold_est - b.hook_hold_est));
+  }, [data, filterText, sortDesc]);
 
   if (!analytics) {
     return (
@@ -113,7 +123,7 @@ export default function Analytics() {
   };
   const areaPath = `${toPath("actual")} L${chartW},${chartH} L0,${chartH} Z`;
 
-  const eventClips = topClips.slice(0, 3);
+  const eventClips = (data?.top_clips || []).slice(0, 3);
   const eventTimes = (() => {
     const drops = [];
     for (let i = 1; i < points.length; i += 1) {
@@ -200,7 +210,7 @@ export default function Analytics() {
             <span className="material-symbols-outlined text-[18px] text-ink-muted group-hover:text-accent transition-colors">
               download
             </span>
-            <span>Export CSV / PDF Report</span>
+            <span>Export CSV Report</span>
           </button>
         </div>
       </header>
@@ -213,7 +223,7 @@ export default function Analytics() {
               <span className="font-label-code-sm text-label-code-sm uppercase tracking-wider text-ink-muted">
                 Aggregate Short Views
               </span>
-              <span className="font-label-code-md text-label-code-md text-ink-600">Projected Omni-Channel Reach</span>
+              <span className="font-label-code-md text-label-code-md text-ink-600">Omni-Channel Aggregation</span>
             </div>
             <span className="p-1.5 rounded-lg bg-accent-soft text-accent border border-accent-line flex items-center justify-center">
               <span className="material-symbols-outlined text-[18px]">visibility</span>
@@ -227,7 +237,7 @@ export default function Analytics() {
               <div className="flex items-center gap-1 mt-1">
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-live-soft border border-live-line font-label-code-sm text-label-code-sm text-live-deep font-medium">
                   <span className="material-symbols-outlined text-[12px] mr-0.5">trending_up</span>
-                  {data?.totals?.clips ? `+${Math.max(2, Math.round(avgViral / 8))}.5%` : "—"}
+                  {data?.totals?.clips ? fmtDelta(avgViral * 0.288) : "—"}
                 </span>
                 <span className="font-label-code-sm text-label-code-sm text-ink-muted">vs prior cycle</span>
               </div>
@@ -254,7 +264,7 @@ export default function Analytics() {
                 {retention.hold_0_3s}%
               </span>
               <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-accent-soft border border-accent-line font-label-code-sm text-label-code-sm text-accent font-medium">
-                +{Math.max(1, (retention.hold_0_3s - 73).toFixed(1))}% vs avg
+                {fmtDelta(retention.hold_0_3s - 73)} vs avg
               </span>
             </div>
             <div className="w-full bg-line-soft h-2 rounded-full overflow-hidden p-[1px] flex items-center border border-line">
@@ -285,7 +295,7 @@ export default function Analytics() {
                 {ctrEst.toFixed(1)}%
               </span>
               <span className="font-label-code-sm text-label-code-sm text-tertiary bg-live-soft border border-live-line px-1.5 py-0.5 rounded font-medium">
-                +{(ctrEst - 8.1).toFixed(1)}% Delta
+                {fmtDelta(ctrEst - 8.1)} Delta
               </span>
             </div>
             <div className="grid grid-cols-3 gap-1 pt-2 border-t border-line font-label-code-sm text-label-code-sm text-ink-muted">
@@ -400,10 +410,13 @@ export default function Analytics() {
             {eventClips.slice(0, eventTimes.length).map((c, i) => (
               <div
                 key={c.clip_id}
-                className={`absolute bg-white/95 backdrop-blur-md border ${
+                className={`absolute hidden sm:flex bg-white/95 backdrop-blur-md border ${
                   i % 2 === 0 ? "border-accent-line" : "border-line"
-                } p-1 rounded shadow-md flex flex-col gap-0.5 max-w-[190px] z-10`}
-                style={{ left: `${6 + i * 23}%`, top: `${24 + i * 12}px` }}
+                } p-1 rounded shadow-md flex-col gap-0.5 max-w-[190px] z-10`}
+                style={{
+                  left: `clamp(8px, calc(${((eventTimes[i] / maxT) * 100).toFixed(1)}% - 95px), calc(100% - 200px))`,
+                  top: `${10 + i * 14}px`,
+                }}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-label-code-sm text-label-code-sm text-accent uppercase font-bold">@ {fmtTC(eventTimes[i])}</span>
@@ -512,7 +525,7 @@ export default function Analytics() {
               </span>
               <input
                 className="w-full bg-white border border-line rounded pl-8 pr-3 py-1 font-label-code-md text-label-code-md text-ink placeholder:text-ink-faint focus:border-accent"
-                placeholder="Filter by script token..."
+                placeholder="Filter clips & projects…"
                 type="text"
                 value={filterText}
                 onChange={(e) => {
@@ -523,10 +536,11 @@ export default function Analytics() {
             </div>
             <button
               type="button"
+              onClick={() => setSortDesc((v) => !v)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-accent text-white font-label-code-md text-label-code-md font-semibold transition-transform active:scale-95 shadow-sm"
             >
               <span className="material-symbols-outlined text-[15px]">sort</span>
-              <span>Sort: Hook Score (Desc)</span>
+              <span>Sort: Hook Score ({sortDesc ? "Desc" : "Asc"})</span>
             </button>
           </div>
         </div>
@@ -568,19 +582,21 @@ export default function Analytics() {
                         <span className="font-label-code-sm text-label-code-sm text-ink-muted truncate">{c.title}</span>
                         <span className="font-label-code-sm text-[10px] text-ink-muted flex items-center gap-1 mt-0.5">
                           <span className="material-symbols-outlined text-[12px] text-accent">record_voice_over</span>
-                          {c.reason ? c.reason.split(/[.;]/)[0] : "Hook-scored cut"}
+                          {c.reason ? c.reason.split(/[.;]/)[0] : ""}
                         </span>
                       </div>
                     </div>
                   </td>
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-1.5">
-                      <span className="px-1.5 py-0.5 rounded bg-line-soft font-label-code-sm text-label-code-sm border border-line text-ink-600">
-                        YT Shorts
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded bg-line-soft font-label-code-sm text-label-code-sm border border-line text-ink-600">
-                        TikTok
-                      </span>
+                      {platformChipsFor(projects.find((pr) => pr.id === c.project_id)?.source_type).map((chip) => (
+                        <span
+                          key={chip}
+                          className="px-1.5 py-0.5 rounded bg-line-soft font-label-code-sm text-label-code-sm border border-line text-ink-600"
+                        >
+                          {chip}
+                        </span>
+                      ))}
                     </div>
                   </td>
                   <td className="py-4 px-4">
@@ -592,9 +608,15 @@ export default function Analytics() {
                   <td className="py-4 px-4">
                     <div className="flex flex-col">
                       <span className="text-[14px] leading-[20px] font-bold text-ink">{c.hook_hold_est}%</span>
-                      <span className="font-label-code-sm text-label-code-sm text-live-deep flex items-center gap-0.5 font-medium">
-                        <span className="material-symbols-outlined text-[11px]">arrow_upward</span>
-                        +{(c.hook_hold_est - 76).toFixed(1)}% above baseline
+                      <span
+                        className={`font-label-code-sm text-label-code-sm flex items-center gap-0.5 font-medium ${
+                          c.hook_hold_est >= 76 ? "text-live-deep" : "text-error-deep"
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[11px]">
+                          {c.hook_hold_est >= 76 ? "arrow_upward" : "arrow_downward"}
+                        </span>
+                        {fmtDelta(c.hook_hold_est - 76)} {c.hook_hold_est >= 76 ? "above" : "below"} baseline
                       </span>
                     </div>
                   </td>

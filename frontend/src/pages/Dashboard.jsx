@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useStudio, routeTo } from "../studio.jsx";
 import { fmtDur, fmtRelTime } from "../utils/format.js";
 
@@ -96,27 +96,27 @@ function ProjectCard({ project }) {
               {fmtDur(project.duration)}
             </span>
           </div>
-          <div className="absolute bottom-space-sm left-space-sm right-space-sm flex items-center justify-between text-inverse-on-surface">
-            <div className="flex items-center gap-2">
+          <div className="absolute bottom-space-sm left-space-sm right-space-sm flex items-center justify-between gap-2 text-inverse-on-surface">
+            <div className="flex items-center gap-2 min-w-0">
               {analyzing ? (
                 <>
-                  <span className="w-2.5 h-2.5 rounded-full bg-secondary animate-ping" />
-                  <span className="font-label-sm text-label-sm font-medium">{project.status_detail || "Analyzing…"}</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-secondary animate-ping shrink-0" />
+                  <span className="font-label-sm text-label-sm font-medium truncate">{project.status_detail || "Analyzing…"}</span>
                 </>
               ) : (
                 <>
-                  <span className="w-2.5 h-2.5 rounded-full bg-tertiary-container animate-ping" />
-                  <span className="font-label-sm text-label-sm font-medium">{project.clips?.length || 0} Shorts Extracted</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-tertiary-container animate-ping shrink-0" />
+                  <span className="font-label-sm text-label-sm font-medium truncate">{project.clips?.length || 0} Shorts Extracted</span>
                 </>
               )}
             </div>
-            <div className="flex items-center gap-1 font-label-sm text-label-sm bg-primary-container/90 px-2 py-0.5 rounded">
+            <div className="flex items-center gap-1 font-label-sm text-label-sm bg-primary-container/90 px-2 py-0.5 rounded shrink-0">
               <span className="material-symbols-outlined text-[14px]">auto_awesome</span>
               <span>9:16 Ready</span>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-space-xs mb-1">
+        <div className="flex flex-wrap items-center gap-x-space-xs gap-y-1 mb-1">
           <span className="font-label-sm text-label-sm text-on-surface-variant font-medium">
             Last modified {fmtRelTime(project.updated_at || project.created_at)}
           </span>
@@ -180,6 +180,20 @@ export default function Dashboard() {
   const [projectTitle, setProjectTitle] = useState("");
   const [subtitleSource, setSubtitleSource] = useState("whisper");
   const [view, setView] = useState("grid");
+  const fileInputRef = useRef(null);
+
+  // ⌘U / Ctrl+U opens the upload file picker (as the dropzone copy promises).
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "u") {
+        e.preventDefault();
+        setTab("tab-upload");
+        window.setTimeout(() => fileInputRef.current?.click(), 80);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const recent = [...projects].sort((a, b) => b.created_at - a.created_at).slice(0, 4);
 
@@ -212,7 +226,7 @@ export default function Dashboard() {
 
         {/* HERO */}
         <div className="flex flex-col items-center text-center max-w-4xl mx-auto mb-space-xl">
-          <div className="inline-flex items-center gap-space-xs px-space-md py-1 rounded-full bg-surface-container-low shadow-sm mb-space-md">
+          <div className="inline-flex flex-wrap items-center justify-center gap-space-xs px-space-md py-1 rounded-full bg-surface-container-low shadow-sm mb-space-md">
             <span className="w-2 h-2 rounded-full bg-tertiary-container animate-pulse" />
             <span className="font-label-sm text-label-sm text-on-surface-variant font-medium tracking-wide">
               ✦ 100% Free • Local Whisper AI + Groq / Gemini Acceleration
@@ -228,7 +242,7 @@ export default function Dashboard() {
             AI viral hook scoring, smart 9:16 reframing &amp; split-screen face tracking, dynamic word-by-word animated
             captions, and instantaneous 1080p MP4 exports.
           </p>
-          <div className="flex items-center justify-center gap-space-lg mt-space-md pt-space-xs text-on-surface-variant">
+          <div className="flex flex-wrap items-center justify-center gap-x-space-lg gap-y-space-sm mt-space-md pt-space-xs text-on-surface-variant">
             <div className="flex items-center gap-1.5">
               <span className="material-symbols-outlined text-[16px] text-tertiary-container">verified</span>
               <span className="font-label-sm text-label-sm tracking-wide uppercase">No Watermark</span>
@@ -250,7 +264,7 @@ export default function Dashboard() {
         <div className="max-w-5xl mx-auto w-full mb-space-xl">
           <div className="bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden">
             <div className="flex items-center justify-between px-space-md pt-space-md bg-surface-container-low/60">
-              <div className="flex items-center gap-space-xs" role="tablist">
+              <div className="flex flex-wrap items-center gap-space-xs" role="tablist">
                 {[
                   { id: "tab-youtube", label: "YouTube Link", icon: "play_circle", iconClass: "text-error", fast: true },
                   { id: "tab-upload", label: "Upload Video", icon: "cloud_upload", iconClass: "text-primary-container" },
@@ -446,6 +460,7 @@ export default function Dashboard() {
                 <div className="flex flex-col gap-space-md">
                   <label className="relative group cursor-pointer p-space-xl rounded-xl bg-surface-container-low hover:bg-surface-container transition-all flex flex-col items-center justify-center text-center">
                     <input
+                      ref={fileInputRef}
                       accept="video/mp4,video/quicktime,video/webm,video/x-matroska"
                       className="absolute inset-0 opacity-0 cursor-pointer z-10"
                       type="file"
@@ -458,7 +473,7 @@ export default function Dashboard() {
                       {file ? file.name : "Drop or select long-form video"}
                     </h3>
                     <p className="font-body-md text-body-md text-on-surface-variant max-w-sm mb-space-md">
-                      Supports MP4, MOV, WebM, MKV, M4V up to {settings ? "the configured limit" : "4GB"}. Processed locally with FFmpeg.
+                      Supports MP4, MOV, WebM, MKV, M4V up to 4GB. Processed locally with FFmpeg.
                     </p>
                     <div className="flex items-center gap-space-sm">
                       <span className="px-space-md py-2 rounded-lg bg-primary-container text-on-primary-container font-body-sm text-body-sm font-semibold shadow-sm">
