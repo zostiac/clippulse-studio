@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import threading
 import time
 import uuid
@@ -152,6 +153,7 @@ class Project(BaseModel):
     status: Literal["ingesting", "analyzing", "ready", "error"] = "ready"
     status_detail: str = ""
     error_message: Optional[str] = None
+    analysis_warnings: List[str] = Field(default_factory=list)
     transcript: List[TranscriptSegment] = Field(default_factory=list)
     clips: List[Clip] = Field(default_factory=list)
     energy_peaks: List[float] = Field(default_factory=list)
@@ -252,10 +254,9 @@ def list_projects() -> List[Project]:
 
 
 def delete_project(project_id: str) -> bool:
-    import shutil
     pdir = _project_path(project_id)
     if pdir is not None and pdir.exists():
-        shutil.rmtree(pdir, ignore_errors=True)
+        shutil.rmtree(pdir)
         return True
     return False
 

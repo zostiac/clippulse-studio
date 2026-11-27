@@ -78,11 +78,11 @@ export default function StudioPreview({
   // The exported MP4 timeline starts at zero; the source timeline starts at
   // the absolute clip start. Re-seek whenever the preview source is swapped.
   useEffect(() => {
-    if (!mainVideoRef.current || !clip) return;
-    mainVideoRef.current.currentTime = previewMode === "live" ? clip.start : 0;
-    if (auxVideoRef.current) auxVideoRef.current.currentTime = clip.start;
-    onTimeUpdate(clip.start);
-  }, [clip, clipId, clipStart, previewMode, onTimeUpdate]);
+    if (!mainVideoRef.current || !clipId) return;
+    mainVideoRef.current.currentTime = previewMode === "live" ? clipStart : 0;
+    if (auxVideoRef.current) auxVideoRef.current.currentTime = clipStart;
+    onTimeUpdate(clipStart);
+  }, [clipId, clipStart, previewMode, onTimeUpdate]);
 
   // Expose seek function to parent (for transcript click-to-seek)
   useEffect(() => {
@@ -160,12 +160,12 @@ export default function StudioPreview({
 
   // Group words into active chunk for live captions
   const clipWords = useMemo(() => {
-    if (!clip) return [];
-    return getClipWords(project.transcript, clip.start, clip.end);
-  }, [project.transcript, clip]);
+    if (!clipId) return [];
+    return getClipWords(project.transcript, clipStart, clipEnd);
+  }, [project.transcript, clipId, clipStart, clipEnd]);
 
   const activeCaptionGroup = useMemo(() => {
-    if (!clip || captionStyle === "off" || !clipWords.length) return null;
+    if (!clipId || captionStyle === "off" || !clipWords.length) return null;
     const chunkSize = Math.max(1, Math.min(6, wordsPerLine || 3));
     const idx = clipWords.findIndex(
       (w) => currentTime >= w.start - 0.05 && currentTime <= w.end + 0.08
@@ -176,7 +176,7 @@ export default function StudioPreview({
       words: clipWords.slice(groupStart, groupStart + chunkSize),
       activeLocalIdx: idx - groupStart,
     };
-  }, [clip, clipWords, currentTime, captionStyle, wordsPerLine]);
+  }, [clipId, clipWords, currentTime, captionStyle, wordsPerLine]);
 
   if (!clip) {
     return (

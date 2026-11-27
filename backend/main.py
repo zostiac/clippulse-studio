@@ -253,7 +253,7 @@ def _run_analysis(project: Project, settings: AppSettings) -> Project:
         project.error_message = None
         save_project(project)
     try:
-        transcript, clips, engine_used = analyze_project(
+        analysis_result = analyze_project(
             project.id,
             project.title,
             Path(project.video_path),
@@ -262,6 +262,11 @@ def _run_analysis(project: Project, settings: AppSettings) -> Project:
             project.energy_peaks,
             settings,
         )
+        if len(analysis_result) == 3:
+            transcript, clips, engine_used = analysis_result
+            analysis_warnings = []
+        else:
+            transcript, clips, engine_used, analysis_warnings = analysis_result
     except Exception as exc:
         # Never leave a project stuck in "analyzing": surface the failure on disk.
         project.status = "error"
@@ -271,12 +276,15 @@ def _run_analysis(project: Project, settings: AppSettings) -> Project:
     project.transcript = transcript
     project.clips = clips
     project.ai_engine_used = engine_used
+    project.analysis_warnings = analysis_warnings
     project.status = "ready"
     if not transcript:
         project.status_detail = (
             "No transcript produced: clips were ranked with energy heuristics only. "
             "Enable Local Whisper or a cloud provider in Settings for captions and better cuts."
         )
+    elif analysis_warnings:
+        project.status_detail = " ".join(analysis_warnings)
     else:
         project.status_detail = ""
     save_project(project)
@@ -492,8 +500,12 @@ def api_delete_project(project_id: str):
         with _EXPORT_LOCK:
             if any(key.startswith(f"{project_id}:") for key in _ACTIVE_EXPORTS):
                 raise HTTPException(status_code=409, detail="Wait for active exports to finish before deleting this project.")
-        if not delete_project(project_id):
-            raise HTTPException(status_code=404, detail="Project not found")
+        try:
+            if not delete_project(project_id):
+                raise HTTPException(status_code=404, detail="Project not found")
+        except OSError as exc:
+            logger.exception("Could not delete project %s", project_id)
+            raise HTTPException(status_code=500, detail="Could not delete project files.") from exc
     return {"deleted": True}
 
 

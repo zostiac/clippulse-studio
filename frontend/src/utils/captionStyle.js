@@ -20,6 +20,10 @@ export function formatCaptionWord(word, style = {}) {
     return value.toUpperCase();
   }
   if (mode === "lowercase") return value.toLowerCase();
+  if (mode === "sentence") {
+    const lower = value.toLowerCase();
+    return lower.charAt(0).toUpperCase() + lower.slice(1);
+  }
   return value;
 }
 
