@@ -20,7 +20,7 @@ const CAPTION_STYLES = [
   { key: "off", label: "Captions Off", tag: "CLEAN", tagClass: "bg-surface-container text-on-surface-variant", hint: "None" },
 ];
 
-function SplitMirror({ videoRef, cropY = 0.75 }) {
+function SplitMirror({ videoRef, cropX = 0.5, cropY = 0.75, className = "w-full h-1/2 pointer-events-none" }) {
   const canvasRef = useRef(null);
   useEffect(() => {
     let raf = 0;
@@ -32,7 +32,7 @@ function SplitMirror({ videoRef, cropY = 0.75 }) {
         const scale = Math.max(c.width / v.videoWidth, c.height / v.videoHeight);
         const sw = c.width / scale;
         const sh = c.height / scale;
-        const sx = (v.videoWidth - sw) / 2;
+        const sx = (v.videoWidth - sw) * cropX;
         const sy = (v.videoHeight - sh) * cropY;
         ctx.drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
       }
@@ -40,8 +40,8 @@ function SplitMirror({ videoRef, cropY = 0.75 }) {
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [videoRef, cropY]);
-  return <canvas ref={canvasRef} width={620} height={550} className="w-full h-1/2 pointer-events-none" aria-hidden="true" />;
+  }, [videoRef, cropX, cropY]);
+  return <canvas ref={canvasRef} width={620} height={550} className={className} aria-hidden="true" />;
 }
 
 const RESOLUTIONS = [
@@ -213,19 +213,19 @@ export default function Editor() {
             <span className="text-outline-variant font-body-sm">/</span>
             <span className="font-headline-sm text-headline-sm text-on-surface truncate font-semibold">{project.title}</span>
           </div>
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-container font-label-sm text-label-sm text-on-surface-variant font-medium">
+          <div className="shrink-0 whitespace-nowrap flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-container font-label-sm text-label-sm text-on-surface-variant font-medium">
             <span className="w-1.5 h-1.5 rounded-full bg-primary-container" />
             <span>{clips.length} Viral Cuts Generated</span>
           </div>
         </div>
         <div className="flex items-center gap-space-md">
-          <div className="flex items-center gap-2 px-3 py-1 bg-surface-container-low rounded-lg font-label-md text-label-md text-on-surface-variant">
+          <div className="hidden md:flex shrink-0 whitespace-nowrap items-center gap-2 px-3 py-1 bg-surface-container-low rounded-lg font-label-md text-label-md text-on-surface-variant">
             <span>Master Reel:</span>
             <span className="font-semibold text-on-surface">{fmtTC(project.duration)}</span>
             <span className="text-outline-variant">•</span>
             <span className="text-tertiary font-semibold">{project.width >= 1440 ? "1440p" : "1080p"} source</span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
               className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
@@ -280,9 +280,9 @@ export default function Editor() {
           </button>
         ))}
       </div>
-      <div className="grid grid-cols-12 gap-0 min-h-[calc(100vh-112px)] bg-surface">
+      <div className="grid grid-cols-12 gap-0 h-[calc(100dvh-160px)] xl:h-[calc(100dvh-116px)] overflow-hidden bg-surface">
         {/* LEFT: clips drawer */}
-        <aside className={`col-span-12 xl:col-span-3 bg-surface-container-low p-margin-sm flex-col gap-space-md shadow-[inset_-1px_0_0_rgba(15,23,42,0.04)] ${mobilePane === "clips" ? "flex" : "hidden"} xl:flex`}>
+        <aside className={`col-span-12 xl:col-span-3 min-h-0 bg-surface-container-low p-margin-sm flex-col gap-space-md shadow-[inset_-1px_0_0_rgba(15,23,42,0.04)] ${mobilePane === "clips" ? "flex" : "hidden"} xl:flex`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="font-label-lg text-label-lg font-semibold tracking-wider text-on-surface uppercase">VIRAL CLIPS</span>
@@ -310,7 +310,7 @@ export default function Editor() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-space-sm overflow-y-auto pr-1">
+          <div className="flex-1 min-h-0 flex flex-col gap-space-sm overflow-y-auto pr-1">
             {clips.map((c, i) => {
               const active = clip && c.id === clip.id;
               return (
@@ -420,8 +420,8 @@ export default function Editor() {
         </aside>
 
         {/* CENTER: monitor + transport */}
-        <main className={`col-span-12 xl:col-span-6 p-space-md flex-col justify-between gap-space-md bg-surface ${mobilePane === "stage" ? "flex" : "hidden"} xl:flex`}>
-          <div className="flex items-center justify-between bg-surface-container-lowest p-2 rounded-xl shadow-sm">
+        <main className={`col-span-12 xl:col-span-6 min-h-0 overflow-y-auto p-space-md flex-col justify-between gap-space-md bg-surface ${mobilePane === "stage" ? "flex" : "hidden"} xl:flex`}>
+          <div className="shrink-0 flex items-center justify-between bg-surface-container-lowest p-2 rounded-xl shadow-sm">
             <div className="flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm font-medium">
               <span className="material-symbols-outlined text-[18px]">aspect_ratio</span>
               <span className="uppercase">Safe Zone Overlays:</span>
@@ -453,14 +453,16 @@ export default function Editor() {
           </div>
 
           {/* Phone monitor */}
-          <div className="flex justify-center items-center flex-1 py-1">
-            <div className="relative w-[310px] h-[550px] bg-inverse-surface rounded-[38px] p-2.5 shadow-2xl flex flex-col justify-between overflow-hidden ring-4 ring-surface-container-highest">
+          <div className="flex justify-center items-center flex-1 min-h-[240px] py-1">
+            <div className="relative h-full max-h-[550px] aspect-[310/550] bg-inverse-surface rounded-[38px] p-2.5 shadow-2xl flex flex-col justify-between overflow-hidden ring-4 ring-surface-container-highest">
               <div className="relative w-full h-full rounded-[30px] overflow-hidden bg-black flex flex-col justify-between">
                 {clip?.style.layout === "blur_fill" ? (
                   <>
-                    <div
-                      className="absolute inset-0 bg-cover bg-center blur-lg scale-110 opacity-70"
-                      style={{ backgroundImage: project.thumbnail_url ? `url(${project.thumbnail_url})` : undefined }}
+                    <SplitMirror
+                      videoRef={videoRef}
+                      cropX={0.5}
+                      cropY={0.5}
+                      className="absolute inset-0 w-full h-full blur-xl scale-110 opacity-80 brightness-[0.84] pointer-events-none"
                     />
                     <video
                       ref={videoRef}
@@ -480,9 +482,16 @@ export default function Editor() {
                       muted={muted}
                       playsInline
                       preload="metadata"
-                      style={{ objectPosition: "center 25%" }}
+                      style={{
+                        objectPosition: `${(clip?.style.split_top_x ?? 0.5) * 100}% ${(clip?.style.split_top_y ?? 0.25) * 100}%`,
+                      }}
                     />
-                    <SplitMirror videoRef={videoRef} cropY={0.75} />
+                    <SplitMirror
+                      videoRef={videoRef}
+                      cropX={clip?.style.split_bottom_x ?? 0.5}
+                      cropY={clip?.style.split_bottom_y ?? 0.75}
+                    />
+                    <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[3px] bg-[#0A0B0F] pointer-events-none" />
                   </div>
                 ) : (
                   <video
@@ -562,7 +571,7 @@ export default function Editor() {
           </div>
 
           {/* scrubber + transport */}
-          <div className="bg-surface-container-lowest p-space-sm rounded-xl shadow-sm flex flex-col gap-space-xs">
+          <div className="shrink-0 bg-surface-container-lowest p-space-sm rounded-xl shadow-sm flex flex-col gap-space-xs">
             <div className="flex items-center justify-between px-space-xs font-label-sm text-label-sm">
               <div className="flex items-center gap-space-sm">
                 <span className="text-on-surface-variant">Selection:</span>
@@ -653,7 +662,7 @@ export default function Editor() {
           </div>
 
           {/* export bar */}
-          <div className="bg-surface-container-lowest p-space-sm rounded-xl shadow-sm flex items-center justify-between gap-space-md">
+          <div className="shrink-0 bg-surface-container-lowest p-space-sm rounded-xl shadow-sm flex items-center justify-between gap-space-md">
             <div className="flex items-center gap-space-sm">
               <span className="font-label-sm text-label-sm text-on-surface-variant uppercase font-medium">Export Preset:</span>
               <div className="relative">
@@ -699,7 +708,7 @@ export default function Editor() {
         </main>
 
         {/* RIGHT: inspector */}
-        <aside className={`col-span-12 xl:col-span-3 bg-surface-container-lowest p-margin-sm flex-col gap-space-md shadow-[inset_1px_0_0_rgba(15,23,42,0.04)] overflow-y-auto ${mobilePane === "inspect" ? "flex" : "hidden"} xl:flex`}>
+        <aside className={`col-span-12 xl:col-span-3 min-h-0 bg-surface-container-lowest p-margin-sm flex-col gap-space-md shadow-[inset_1px_0_0_rgba(15,23,42,0.04)] overflow-y-auto ${mobilePane === "inspect" ? "flex" : "hidden"} xl:flex`}>
           <div className="flex items-center p-1 bg-surface-container-low rounded-xl">
             {[
               { key: "style", label: "Style" },
@@ -777,6 +786,64 @@ export default function Editor() {
                   })}
                 </div>
               </div>
+
+              {clip.style.layout === "split_screen" && (
+                <div className="flex flex-col gap-2 bg-surface-container-low p-space-sm rounded-xl">
+                  <div className="flex items-center justify-between">
+                    <span className="font-label-sm text-label-sm font-semibold text-on-surface uppercase tracking-wider">
+                      Split-Screen Crop
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => patchStyle({ split_top_x: 0.5, split_top_y: 0.25, split_bottom_x: 0.5, split_bottom_y: 0.75 })}
+                      className="text-primary-container font-label-sm text-label-sm font-semibold hover:underline"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                  <p className="text-on-surface-variant font-body-sm text-body-sm">
+                    Place each pane&apos;s crop window over the source — e.g. the person on one pane, gameplay on the other.
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    {[
+                      { label: "Stacked", v: { split_top_x: 0.5, split_top_y: 0.25, split_bottom_x: 0.5, split_bottom_y: 0.75 } },
+                      { label: "Side-by-Side", v: { split_top_x: 0.12, split_top_y: 0.5, split_bottom_x: 0.88, split_bottom_y: 0.5 } },
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => patchStyle(preset.v)}
+                        className="flex-1 px-2 py-1 rounded-lg bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest font-label-sm text-label-sm font-medium transition-colors"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                  {[
+                    { key: "split_top_x", label: "Top Pane — Horizontal", value: clip.style.split_top_x },
+                    { key: "split_top_y", label: "Top Pane — Vertical", value: clip.style.split_top_y },
+                    { key: "split_bottom_x", label: "Bottom Pane — Horizontal", value: clip.style.split_bottom_x },
+                    { key: "split_bottom_y", label: "Bottom Pane — Vertical", value: clip.style.split_bottom_y },
+                  ].map((row) => (
+                    <div key={row.key} className="flex flex-col gap-0.5">
+                      <div className="flex justify-between font-label-sm text-label-sm text-on-surface-variant">
+                        <span className="font-medium">{row.label}</span>
+                        <span className="font-semibold text-on-surface">{Math.round((row.value ?? 0.5) * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={row.value ?? 0.5}
+                        onChange={(e) => patchStyle({ [row.key]: Number(e.target.value) })}
+                        className="w-full h-1.5 bg-surface-container-highest rounded-lg appearance-none cursor-pointer accent-primary-container"
+                        aria-label={row.label}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="flex flex-col gap-2 bg-surface-container-low p-space-sm rounded-xl">
                 <div className="flex items-center justify-between">

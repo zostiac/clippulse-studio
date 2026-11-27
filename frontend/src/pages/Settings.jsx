@@ -77,7 +77,7 @@ export default function Settings() {
   const [sttFallback, setSttFallback] = useState(settings?.transcription_provider || "auto");
   const [captionStyle, setCaptionStyle] = useState(settings?.default_caption_style || "hormozi");
   const [layout, setLayout] = useState(settings?.default_layout || "center_crop");
-  const [maxClips, setMaxClips] = useState(settings?.max_clips || 6);
+  const [maxClips, setMaxClips] = useState(settings?.max_clips ?? 0);
   const [cookies, setCookies] = useState("");
   const [cookieBytes, setCookieBytes] = useState(0);
   const fileRef = useRef(null);
@@ -91,7 +91,7 @@ export default function Settings() {
     setSttFallback(settings.transcription_provider);
     setCaptionStyle(settings.default_caption_style);
     setLayout(settings.default_layout);
-    setMaxClips(settings.max_clips || 6);
+    setMaxClips(settings.max_clips ?? 0);
   }, [settings]);
 
   const goto = (id) => {
@@ -153,7 +153,7 @@ export default function Settings() {
       enable_local_whisper: true,
       default_caption_style: "hormozi",
       default_layout: "center_crop",
-      max_clips: 6,
+      max_clips: 0,
     });
   };
 
@@ -593,22 +593,27 @@ export default function Settings() {
                   Max Viral Clips / Source
                 </label>
                 <span className="font-label-md text-label-md font-semibold text-primary-container">
-                  {maxClips} {maxClips === 1 ? "Clip" : "Clips"}
+                  {maxClips === 0 ? "Auto" : `${maxClips} ${maxClips === 1 ? "Clip" : "Clips"}`}
                 </span>
               </div>
               <input
                 className="w-full h-1.5 bg-surface-container-highest rounded-lg appearance-none cursor-pointer accent-primary-container"
                 type="range"
                 aria-label="Maximum viral clips per source"
-                min="1"
+                min="0"
                 max="15"
                 value={maxClips}
                 onChange={(e) => setMaxClips(Number(e.target.value))}
               />
               <div className="flex justify-between font-label-sm text-label-sm text-on-surface-variant">
-                <span>1 (Top Hook)</span>
+                <span>Auto (by length)</span>
                 <span>15 (Deep Scan)</span>
               </div>
+              {maxClips === 0 && (
+                <p className="text-on-surface-variant font-body-sm text-body-sm">
+                  Auto scales with the video: about one clip per 2 minutes of footage (3–15 clips).
+                </p>
+              )}
             </div>
 
             <div className="rounded-xl overflow-hidden bg-surface-container-low p-space-sm flex flex-col gap-space-xs">

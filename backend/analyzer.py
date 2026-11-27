@@ -424,6 +424,14 @@ def transcribe_with_cloud_whisper(
     return segments
 
 
+def resolve_max_clips(settings: AppSettings, duration: float) -> int:
+    """Clip cap for one analysis pass. max_clips == 0 means Auto: roughly one
+    clip per two minutes of source, clamped to a sane 3-15 range."""
+    if settings.max_clips > 0:
+        return max(1, min(15, settings.max_clips))
+    return max(3, min(15, int(duration / 120.0 + 0.5) + 2))
+
+
 def _parse_llm_clips_json(
     raw: str,
     project_id: str,
@@ -438,9 +446,10 @@ def _parse_llm_clips_json(
     items = parsed.get("clips") if isinstance(parsed, dict) else parsed
     if not isinstance(items, list):
         return None
+    max_clips = resolve_max_clips(settings, duration)
     clips: List[Clip] = []
     for item in items:
-        if len(clips) >= settings.max_clips:
+        if len(clips) >= max_clips:
             break
         st = max(0.0, float(item.get("start", 0.0)))
         en = min(duration, float(item.get("end", st + 20.0)))
@@ -582,6 +591,7 @@ def detect_clips_heuristic(
     energy_peaks: List[float],
     settings: AppSettings,
 ) -> List[Clip]:
+    max_clips = resolve_max_clips(settings, duration)
     clips: List[Clip] = []
 
     if transcript and len(transcript) >= 2:
@@ -647,7 +657,7 @@ def detect_clips_heuristic(
                     platform_meta=_build_platform_meta(title, full_text, hook_banner),
                 )
             )
-            if len(clips) >= settings.max_clips:
+            if len(clips) >= max_clips:
                 break
     else:
         win = min(30.0, max(10.0, duration * 0.35))
@@ -655,14 +665,14 @@ def detect_clips_heuristic(
         t = 0.0
         idx = 1
         windows = []
-        while t + min(8.0, duration * 0.25) < duration and len(windows) < max(2, settings.max_clips):
+        while t + min(8.0, duration * 0.25) < duration and len(windows) < max(2, max_clips):
             en = min(duration, t + win)
             avg_e, peak_e = _energy_in_range(energy_peaks, t, en, duration)
             sc = int(min(95, max(68, 68 + avg_e * 18 + peak_e * 10)))
             windows.append((sc, t, en, avg_e, peak_e))
             t += step
         windows.sort(key=lambda x: x[0], reverse=True)
-        for sc, st, en, avg_e, peak_e in windows[: settings.max_clips]:
+        for sc, st, en, avg_e, peak_e in windows[:max_clips]:
             title = f"High-Energy Segment #{idx}"
             hook = f"HIGHLIGHT MOMENT #{idx}"
             clips.append(

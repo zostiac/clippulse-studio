@@ -438,7 +438,7 @@ def update_settings(payload: SettingsUpdate):
     if payload.whisper_model in ("tiny", "base", "small", "medium"):
         s.whisper_model = payload.whisper_model  # type: ignore
     if payload.max_clips is not None:
-        s.max_clips = max(1, min(15, int(payload.max_clips)))
+        s.max_clips = max(0, min(15, int(payload.max_clips)))
     if payload.default_caption_style in ("hormozi", "beast", "minimal", "neon", "off"):
         s.default_caption_style = payload.default_caption_style  # type: ignore
     if payload.default_layout in ("center_crop", "blur_fill", "split_screen"):
