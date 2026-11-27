@@ -43,9 +43,22 @@ export default function Analytics() {
 
   if (!analytics) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 gap-3">
-        <span className="material-symbols-outlined text-[40px] text-ink-faint animate-pulse">monitoring</span>
-        <p className="font-title-sm text-title-sm text-ink-muted">Loading performance intelligence…</p>
+      <div className="w-full overflow-hidden px-4 lg:px-6 py-6 flex flex-col gap-6" aria-busy="true">
+        <div className="flex flex-col gap-2">
+          <div className="h-4 w-72 rounded bg-line-soft animate-pulse" />
+          <div className="h-8 w-96 rounded bg-line-soft animate-pulse" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-36 rounded-xl bg-white border border-line animate-pulse" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+          <div className="xl:col-span-8 h-80 rounded-xl bg-white border border-line animate-pulse" />
+          <div className="xl:col-span-4 h-80 rounded-xl bg-white border border-line animate-pulse" />
+        </div>
+        <div className="h-64 rounded-xl bg-white border border-line animate-pulse" />
+        <p className="font-body-sm text-body-sm text-ink-muted text-center">Loading performance intelligence…</p>
       </div>
     );
   }
