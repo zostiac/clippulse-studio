@@ -60,3 +60,6 @@ export function fmtCount(n) {
 export function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
 }
+
+// Vault/cloud storage quota shown in the shell and projects vault.
+export const STORAGE_CAP_BYTES = 500 * 1024 * 1024 * 1024;

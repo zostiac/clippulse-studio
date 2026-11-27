@@ -309,6 +309,7 @@ class SettingsUpdate(BaseModel):
     transcription_provider: Optional[str] = None
     transcription_api_key: Optional[str] = Field(default=None, max_length=4096)
     enable_local_whisper: Optional[bool] = None
+    use_cuda: Optional[bool] = None
     whisper_model: Optional[str] = None
     max_clips: Optional[int] = None
     openai_api_key: Optional[str] = None
@@ -393,6 +394,7 @@ def get_settings():
         "has_transcription_api_key": bool(trans_key),
         "transcription_api_key_preview": _mask_key(trans_key),
         "enable_local_whisper": s.enable_local_whisper,
+        "use_cuda": s.use_cuda,
         "whisper_model": s.whisper_model,
         "max_clips": s.max_clips,
         "has_openai_key": bool(s.openai_api_key),
@@ -423,6 +425,8 @@ def update_settings(payload: SettingsUpdate):
         s.transcription_api_key = payload.transcription_api_key.strip()
     if payload.enable_local_whisper is not None:
         s.enable_local_whisper = payload.enable_local_whisper
+    if payload.use_cuda is not None:
+        s.use_cuda = payload.use_cuda
     if payload.whisper_model in ("tiny", "base", "small", "medium"):
         s.whisper_model = payload.whisper_model  # type: ignore
     if payload.max_clips is not None:

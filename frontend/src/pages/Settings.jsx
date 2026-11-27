@@ -87,6 +87,7 @@ export default function Settings() {
     setProvider(settings.ai_provider);
     setAiModel(settings.ai_model || "");
     setWhisperModel(settings.whisper_model);
+    setCuda(settings.use_cuda ?? true);
     setSttFallback(settings.transcription_provider);
     setCaptionStyle(settings.default_caption_style);
     setLayout(settings.default_layout);
@@ -158,6 +159,20 @@ export default function Settings() {
 
   const caps = health?.capabilities || {};
   const healthy = health?.status === "ok";
+
+  if (!settings) {
+    return (
+      <div className="px-margin-lg py-margin flex flex-col gap-space-lg" aria-busy="true">
+        <div className="h-40 rounded-xl bg-surface-container-lowest shadow-sm animate-pulse" />
+        <div className="h-12 rounded-xl bg-surface-container-lowest shadow-sm animate-pulse" />
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-space-lg">
+          <div className="lg:col-span-8 h-96 rounded-xl bg-surface-container-lowest shadow-sm animate-pulse" />
+          <div className="lg:col-span-4 h-96 rounded-xl bg-surface-container-lowest shadow-sm animate-pulse" />
+        </div>
+        <p className="font-body-sm text-body-sm text-on-surface-variant text-center">Loading engine configuration…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="px-margin-lg py-margin flex flex-col gap-space-lg">
@@ -297,14 +312,14 @@ export default function Settings() {
                 <div className="flex items-center gap-space-sm">
                   <input
                     type="password"
-                    className="flex-1 px-space-md py-2 rounded-lg bg-surface-container-lowest font-label-md text-label-md text-on-surface shadow-sm focus:outline-none"
+                    className="flex-1 px-space-md py-2 rounded-lg bg-surface-container-lowest font-label-md text-label-md text-on-surface shadow-sm"
                     placeholder={settings?.api_key_preview ? `Saved: ${settings.api_key_preview}` : "Paste your API key"}
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                   />
                   <input
                     type="text"
-                    className="w-56 px-space-md py-2 rounded-lg bg-surface-container-lowest font-label-md text-label-md text-on-surface shadow-sm focus:outline-none"
+                    className="w-56 px-space-md py-2 rounded-lg bg-surface-container-lowest font-label-md text-label-md text-on-surface shadow-sm"
                     placeholder="Model override (optional)"
                     value={aiModel}
                     onChange={(e) => setAiModel(e.target.value)}
@@ -338,7 +353,7 @@ export default function Settings() {
                   </label>
                   <div className="relative">
                     <select
-                      className="w-full appearance-none px-space-md py-2 pr-8 rounded-lg bg-surface-container-lowest font-body-sm text-body-sm text-on-surface shadow-sm focus:outline-none"
+                      className="w-full appearance-none px-space-md py-2 pr-8 rounded-lg bg-surface-container-lowest font-body-sm text-body-sm text-on-surface shadow-sm"
                       value={whisperModel}
                       onChange={(e) => setWhisperModel(e.target.value)}
                     >
@@ -365,9 +380,18 @@ export default function Settings() {
                       <span className="font-body-sm text-body-sm font-medium text-on-surface">NVIDIA CUDA (Float16)</span>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
-                      <input className="sr-only peer" type="checkbox" checked={cuda} onChange={(e) => setCuda(e.target.checked)} />
+                      <input
+                        className="sr-only peer"
+                        type="checkbox"
+                        aria-label="NVIDIA CUDA acceleration"
+                        checked={cuda}
+                        onChange={(e) => {
+                          setCuda(e.target.checked);
+                          saveSettings({ use_cuda: e.target.checked });
+                        }}
+                      />
                       <div
-                        className={`w-9 h-5 rounded-full peer-focus:outline-none transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:rounded-full after:h-4 after:w-4 after:transition-all ${
+                        className={`w-9 h-5 rounded-full peer-transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:rounded-full after:h-4 after:w-4 after:transition-all ${
                           cuda ? "bg-primary-container after:translate-x-full" : "bg-surface-container-highest"
                         }`}
                       />
@@ -384,7 +408,7 @@ export default function Settings() {
                 </label>
                 <div className="relative">
                   <select
-                    className="w-full appearance-none px-space-md py-2 pr-8 rounded-lg bg-surface-container-lowest font-body-sm text-body-sm text-on-surface shadow-sm focus:outline-none"
+                    className="w-full appearance-none px-space-md py-2 pr-8 rounded-lg bg-surface-container-lowest font-body-sm text-body-sm text-on-surface shadow-sm"
                     value={sttFallback}
                     onChange={(e) => setSttFallback(e.target.value)}
                   >
@@ -454,7 +478,7 @@ export default function Settings() {
               </div>
               <div className="relative rounded-xl overflow-hidden bg-surface-container-low shadow-inner">
                 <textarea
-                  className="w-full p-space-md bg-transparent font-label-md text-label-md text-on-surface resize-y focus:outline-none placeholder:text-on-surface-variant/50 leading-relaxed"
+                  className="w-full p-space-md bg-transparent font-label-md text-label-md text-on-surface resize-y placeholder:text-on-surface-variant/50 leading-relaxed"
                   rows={7}
                   spellCheck={false}
                   placeholder={`# Netscape HTTP Cookie File\n# https://curl.haxx.se/rfc/cookie_spec.html\n\n.youtube.com\tTRUE\t/\tTRUE\t1743518400\tVISITOR_INFO1_LIVE\tq9vKk4B7a_A`}
@@ -521,7 +545,7 @@ export default function Settings() {
               </label>
               <div className="relative">
                 <select
-                  className="w-full appearance-none px-space-md py-2 pr-8 rounded-lg bg-surface-container-low font-body-sm text-body-sm text-on-surface shadow-sm focus:outline-none"
+                  className="w-full appearance-none px-space-md py-2 pr-8 rounded-lg bg-surface-container-low font-body-sm text-body-sm text-on-surface shadow-sm"
                   value={captionStyle}
                   onChange={(e) => setCaptionStyle(e.target.value)}
                 >
@@ -546,7 +570,7 @@ export default function Settings() {
               </label>
               <div className="relative">
                 <select
-                  className="w-full appearance-none px-space-md py-2 pr-8 rounded-lg bg-surface-container-low font-body-sm text-body-sm text-on-surface shadow-sm focus:outline-none"
+                  className="w-full appearance-none px-space-md py-2 pr-8 rounded-lg bg-surface-container-low font-body-sm text-body-sm text-on-surface shadow-sm"
                   value={layout}
                   onChange={(e) => setLayout(e.target.value)}
                 >
@@ -575,6 +599,7 @@ export default function Settings() {
               <input
                 className="w-full h-1.5 bg-surface-container-highest rounded-lg appearance-none cursor-pointer accent-primary-container"
                 type="range"
+                aria-label="Maximum viral clips per source"
                 min="1"
                 max="15"
                 value={maxClips}

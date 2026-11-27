@@ -1,7 +1,7 @@
 const PRESET_HIGHLIGHTS = {
   hormozi: "#FACC15",
   beast: "#22D3EE",
-  minimal: "#F8FAFC",
+  minimal: "#F59E0B",
   neon: "#E879F9",
 };
 
@@ -11,6 +11,8 @@ const CUSTOM_HIGHLIGHTS = {
   amber: "#F59E0B",
   green: "#34D399",
   white: "#FFFFFF",
+  // Deprecated alias: older saved clips may still carry "violet".
+  violet: "#F59E0B",
 };
 
 export function formatCaptionWord(word, style = {}) {
