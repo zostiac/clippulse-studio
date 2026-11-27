@@ -29,7 +29,7 @@ def _positive_env_int(name: str, default: int, maximum: int) -> int:
     return max(1, min(value, maximum))
 
 
-MAX_UPLOAD_MB = _positive_env_int("CLIPPULSE_MAX_UPLOAD_MB", 1024, 4096)
+MAX_UPLOAD_MB = _positive_env_int("CLIPPULSE_MAX_UPLOAD_MB", 4096, 4096)
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 MAX_SUBTITLE_MB = _positive_env_int("CLIPPULSE_MAX_SUBTITLE_MB", 5, 25)
 MAX_SUBTITLE_BYTES = MAX_SUBTITLE_MB * 1024 * 1024
@@ -78,7 +78,7 @@ class ClipStyle(BaseModel):
     # Local, export-safe caption controls. "style" keeps the selected preset's look.
     caption_animation: Literal["pop", "karaoke", "fade", "none"] = "pop"
     caption_case: Literal["style", "uppercase", "lowercase", "sentence"] = "style"
-    caption_highlight: Literal["style", "yellow", "cyan", "violet", "green", "white"] = "style"
+    caption_highlight: Literal["style", "yellow", "cyan", "amber", "green", "white", "violet"] = "style"
     caption_background: Literal["style", "outline", "pill", "none"] = "style"
     caption_font: Literal["Arial", "Arial Black", "DejaVu Sans", "Impact"] = "Arial"
     # Face follow is performed locally during export; manual pan remains the fallback.
@@ -150,6 +150,7 @@ class Project(BaseModel):
     width: int = Field(default=1920, ge=0)
     height: int = Field(default=1080, ge=0)
     created_at: float = Field(default_factory=time.time)
+    updated_at: float = Field(default=0.0)
     status: Literal["ingesting", "analyzing", "ready", "error"] = "ready"
     status_detail: str = ""
     error_message: Optional[str] = None
@@ -158,6 +159,8 @@ class Project(BaseModel):
     clips: List[Clip] = Field(default_factory=list)
     energy_peaks: List[float] = Field(default_factory=list)
     ai_engine_used: str = "local_free"
+    archived: bool = False
+    skip_transcription: bool = False
 
 
 AIProvider = Literal["local_free", "groq", "gemini", "openrouter", "openai"]
@@ -165,13 +168,15 @@ TranscriptionProvider = Literal["auto", "groq", "openai", "local"]
 
 
 class AppSettings(BaseModel):
-    ai_provider: AIProvider = "local_free"
+    ai_provider: AIProvider = "groq"
     api_key: str = ""
     ai_model: str = ""
     transcription_provider: TranscriptionProvider = "auto"
     transcription_api_key: str = ""
     enable_local_whisper: bool = True
-    whisper_model: Literal["tiny", "base"] = "tiny"
+    use_cuda: bool = True
+    whisper_model: Literal["tiny", "base", "small", "medium"] = "small"
+    max_clips: int = Field(default=6, ge=1, le=15)
     # Legacy alias support
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
@@ -222,6 +227,7 @@ def _atomic_write_text(path: Path, text: str) -> None:
 
 def save_project(project: Project) -> None:
     with _store_lock:
+        project.updated_at = time.time()
         pdir = get_project_dir(project.id)
         _atomic_write_text(pdir / "project.json", project.model_dump_json(indent=2))
 
@@ -249,7 +255,7 @@ def list_projects() -> List[Project]:
             proj = load_project(pdir.name)
             if proj:
                 items.append(proj)
-    items.sort(key=lambda p: p.created_at, reverse=True)
+    items.sort(key=lambda p: (p.updated_at or p.created_at), reverse=True)
     return items
 
 

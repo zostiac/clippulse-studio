@@ -1,463 +1,106 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Sliders, FileText, Share2 } from "lucide-react";
-import { api } from "./api";
-import { replaceProjectIfCurrent } from "./utils/projectState";
-import HeaderBar from "./components/HeaderBar";
-import IngestView from "./components/IngestView";
-import ClipListSidebar from "./components/ClipListSidebar";
-import StudioPreview from "./components/StudioPreview";
-import EditorControls from "./components/EditorControls";
-import TranscriptEditor from "./components/TranscriptEditor";
-import SocialMetadataPanel from "./components/SocialMetadataPanel";
-import SettingsModal from "./components/SettingsModal";
+import React, { useState } from "react";
+import { StudioProvider, useStudio } from "./studio.jsx";
+import Sidebar from "./components/shell/Sidebar.jsx";
+import TopHeader from "./components/shell/TopHeader.jsx";
+import Dashboard from "./pages/Dashboard.jsx";
+import Projects from "./pages/Projects.jsx";
+import Editor from "./pages/Editor.jsx";
+import Analytics from "./pages/Analytics.jsx";
+import Settings from "./pages/Settings.jsx";
+import SocialKit from "./pages/SocialKit.jsx";
 
-export default function App() {
-  const [settings, setSettings] = useState(null);
-  const [projects, setProjects] = useState([]);
-  const [activeProject, setActiveProject] = useState(null);
-  const [selectedClipId, setSelectedClipId] = useState(null);
-  const [inspectorTab, setInspectorTab] = useState("style"); // style | transcript | social
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [reanalyzing, setReanalyzing] = useState(false);
-  const [actionError, setActionError] = useState("");
+function Toaster() {
+  const { toasts, dismissToast } = useStudio();
+  if (!toasts.length) return null;
+  const icon = { success: "check_circle", error: "error", info: "info" };
+  return (
+    <div
+      aria-live="polite"
+      aria-atomic="false"
+      role="status"
+      className="fixed bottom-6 right-6 z-[80] flex flex-col gap-space-sm items-end pointer-events-none max-h-[70vh] overflow-hidden"
+    >
+      {toasts.slice(-4).map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          onClick={() => dismissToast(t.id)}
+          className="pointer-events-auto flex items-center gap-space-xs px-space-md py-space-sm rounded-lg bg-inverse-surface text-inverse-on-surface shadow-xl text-left"
+        >
+          <span
+            className={`material-symbols-outlined text-[20px] ${
+              t.kind === "success" ? "text-tertiary-fixed" : t.kind === "error" ? "text-error-container" : "text-primary-fixed-dim"
+            }`}
+          >
+            {icon[t.kind] || "info"}
+          </span>
+          <span className="font-body-sm text-body-sm font-medium max-w-sm">{t.message}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
-  const seekRef = useRef(null);
-  const patchTimerRef = useRef(new Map());
+function Shell() {
+  const { route } = useStudio();
+  const [navOpen, setNavOpen] = useState(false);
+  const editorial = route.name === "projects" || route.name === "analytics" || route.name === "social";
+  const shellVariant = editorial ? "editorial" : "material";
 
-  const loadInitial = useCallback(async () => {
-    try {
-      const [s, list] = await Promise.all([api.getSettings(), api.listProjects()]);
-      setSettings(s);
-      setProjects(list);
-    } catch (e) {
-      console.error(e);
-    }
-  }, []);
+  // Close the mobile drawer whenever the route changes.
+  const routeKey = `${route.name}:${route.projectId || ""}:${route.clipId || ""}`;
+  React.useEffect(() => {
+    setNavOpen(false);
+  }, [routeKey]);
 
-  useEffect(() => {
-    loadInitial();
-  }, [loadInitial]);
-
-  // Poll only while exports are active; preserve optimistic edits that have not
-  // reached the backend yet and ignore responses for a project that is no longer open.
-  const hasRendering = activeProject?.clips?.some((c) => c.export_status === "rendering");
-  const activeProjectId = activeProject?.id || null;
-  useEffect(() => {
-    if (!activeProjectId || !hasRendering) return;
-    const projectId = activeProjectId;
-    const timer = setInterval(async () => {
-      try {
-        const fresh = await api.getProject(projectId);
-        const pending = [...patchTimerRef.current.entries()]
-          .filter(([key]) => key.startsWith(`${projectId}:`));
-        const mergedClips = fresh.clips.map((clip) => {
-          const queued = pending.find(([key]) => key === `${projectId}:${clip.id}`);
-          return queued ? { ...clip, ...queued[1].patch } : clip;
-        });
-        setActiveProject((current) =>
-          current?.id === projectId ? { ...fresh, clips: mergedClips } : current
-        );
-      } catch {
-        // Ignore transient polling errors; the next cycle will retry.
-      }
-    }, 1400);
-    return () => clearInterval(timer);
-  }, [activeProjectId, hasRendering]);
-
-  useEffect(() => () => {
-    for (const queued of patchTimerRef.current.values()) clearTimeout(queued.timer);
-    patchTimerRef.current.clear();
-  }, []);
-
-  function applyServerClipUpdate(projectId, updatedClip) {
-    const key = `${projectId}:${updatedClip.id}`;
-    const pending = patchTimerRef.current.get(key);
-    const visibleClip = pending ? { ...updatedClip, ...pending.patch } : updatedClip;
-    setActiveProject((current) =>
-      current?.id === projectId
-        ? {
-            ...current,
-            clips: current.clips.map((clip) => clip.id === updatedClip.id ? visibleClip : clip),
-          }
-        : current
-    );
-  }
-
-  async function flushClipPatch(projectId, clipId) {
-    const key = `${projectId}:${clipId}`;
-    const queued = patchTimerRef.current.get(key);
-    if (!queued) return;
-    if (queued.timer) {
-      clearTimeout(queued.timer);
-      queued.timer = null;
-      queued.error = null;
-      queued.promise = Promise.resolve(queued.promise)
-        .catch(() => {})
-        .then(() => api.updateClip(projectId, clipId, queued.patch))
-        .then((updatedClip) => {
-          applyServerClipUpdate(projectId, updatedClip);
-          return updatedClip;
-        });
-    } else if (queued.error) {
-      // A debounced save failed; retry it before a destructive or export action.
-      queued.error = null;
-      queued.promise = Promise.resolve(queued.promise)
-        .catch(() => {})
-        .then(() => api.updateClip(projectId, clipId, queued.patch))
-        .then((updatedClip) => {
-          applyServerClipUpdate(projectId, updatedClip);
-          return updatedClip;
-        });
-    }
-    try {
-      await queued.promise;
-      if (queued.error) {
-        queued.error = null;
-        const updatedClip = await api.updateClip(projectId, clipId, queued.patch);
-        applyServerClipUpdate(projectId, updatedClip);
-      }
-      if (patchTimerRef.current.get(key) === queued) patchTimerRef.current.delete(key);
-      setActionError("");
-    } catch (error) {
-      queued.error = error;
-      throw error;
-    }
-  }
-
-  async function flushProjectPatches(projectId) {
-    const clipIds = [...patchTimerRef.current.keys()]
-      .filter((key) => key.startsWith(`${projectId}:`))
-      .map((key) => key.slice(projectId.length + 1));
-    await Promise.all(clipIds.map((clipId) => flushClipPatch(projectId, clipId)));
-  }
-
-  const selectedClip =
-    activeProject?.clips?.find((c) => c.id === selectedClipId) ||
-    activeProject?.clips?.[0] ||
-    null;
-
-  function openProjectObj(proj) {
-    setActiveProject(proj);
-    setSelectedClipId(proj.clips?.[0]?.id || null);
-    setCurrentTime(proj.clips?.[0]?.start || 0);
-  }
-
-  async function handleOpenProject(id) {
-    setActionError("");
-    try {
-      const proj = await api.getProject(id);
-      openProjectObj(proj);
-    } catch (error) {
-      setActionError(error.message || "Could not open this project.");
-    }
-  }
-
-  async function handleDeleteProject(id) {
-    setActionError("");
-    try {
-      await flushProjectPatches(id);
-      await api.deleteProject(id);
-      setProjects((prev) => prev.filter((p) => p.id !== id));
-      if (activeProject?.id === id) {
-        setActiveProject(null);
-        setSelectedClipId(null);
-      }
-    } catch (error) {
-      setActionError(error.message || "Could not delete this project.");
-    }
-  }
-
-  function handleProjectCreated(proj) {
-    setProjects((prev) => [proj, ...prev.filter((p) => p.id !== proj.id)]);
-    openProjectObj(proj);
-  }
-
-  // Optimistic local clip update + debounced PATCH
-  function patchSelectedClip(patch) {
-    if (!activeProject || !selectedClip) return;
-    const clipId = selectedClip.id;
-    const projId = activeProject.id;
-
-    setActiveProject((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        clips: prev.clips.map((c) => {
-          if (c.id !== clipId) return c;
-          const next = { ...c, ...patch };
-          const invalidatesExport = patch.style !== undefined || patch.start !== undefined || patch.end !== undefined;
-          if (invalidatesExport && ["done", "error"].includes(next.export_status)) {
-            next.export_status = "idle";
-            next.export_progress = 0;
-            next.export_filename = null;
-            next.export_url = null;
-            next.exported_at = null;
-          }
-          return next;
-        }),
-      };
-    });
-
-    const key = `${projId}:${clipId}`;
-    const existing = patchTimerRef.current.get(key);
-    if (existing?.timer) clearTimeout(existing.timer);
-    const queued = {
-      patch: { ...(existing?.patch || {}), ...patch },
-      timer: null,
-      promise: existing?.promise || Promise.resolve(),
-    };
-    queued.timer = setTimeout(() => {
-      queued.timer = null;
-      queued.promise = Promise.resolve(queued.promise)
-        .catch(() => {})
-        .then(() => api.updateClip(projId, clipId, queued.patch))
-        .then((updatedClip) => {
-          applyServerClipUpdate(projId, updatedClip);
-          if (patchTimerRef.current.get(key) === queued) patchTimerRef.current.delete(key);
-        })
-        .catch((e) => {
-          queued.error = e;
-          setActionError(e.message || "Could not save this clip change. It will retry before the next action.");
-          console.error("Failed to save clip update:", e);
-        });
-    }, 300);
-    patchTimerRef.current.set(key, queued);
-  }
-
-  async function handleCreateClip(payload) {
-    if (!activeProject) return;
-    setActionError("");
-    try {
-      const created = await api.createClip(activeProject.id, payload);
-      setActiveProject((prev) => ({
-        ...prev,
-        clips: [created, ...prev.clips],
-      }));
-      setSelectedClipId(created.id);
-    } catch (error) {
-      setActionError(error.message || "Could not create this clip.");
-    }
-  }
-
-  async function handleDeleteClip(clipId) {
-    if (!activeProject) return;
-    setActionError("");
-    try {
-      await flushClipPatch(activeProject.id, clipId);
-      await api.deleteClip(activeProject.id, clipId);
-      const remaining = activeProject.clips.filter((c) => c.id !== clipId);
-      setActiveProject((prev) => ({ ...prev, clips: prev.clips.filter((c) => c.id !== clipId) }));
-      if (selectedClipId === clipId) setSelectedClipId(remaining[0]?.id || null);
-    } catch (error) {
-      setActionError(error.message || "Could not delete this clip.");
-    }
-  }
-
-  async function handleReanalyze() {
-    if (!activeProject) return;
-    setReanalyzing(true);
-    setActionError("");
-    try {
-      await flushProjectPatches(activeProject.id);
-      const updated = await api.reanalyzeProject(activeProject.id);
-      setActiveProject(updated);
-      setSelectedClipId(updated.clips?.[0]?.id || null);
-    } catch (error) {
-      setActionError(error.message || "Could not reanalyze this project.");
-    } finally {
-      setReanalyzing(false);
-    }
-  }
-
-  async function handleSaveTranscript(segments) {
-    if (!activeProject) return;
-    // Capture the target before awaiting: the user can switch projects while
-    // the server is saving. A late response must never replace another project.
-    const projectId = activeProject.id;
-    try {
-      const updated = await api.updateTranscript(projectId, segments);
-      setActiveProject((current) => replaceProjectIfCurrent(current, projectId, updated));
-      setActionError("");
-    } catch (error) {
-      setActionError(error.message || "Could not save the transcript.");
-      throw error;
-    }
-  }
-
-  async function handleExportClip() {
-    if (!activeProject || !selectedClip) return;
-    setActionError("");
-    try {
-      await flushClipPatch(activeProject.id, selectedClip.id);
-      const updatedClip = await api.exportClip(activeProject.id, selectedClip.id);
-      setActiveProject((prev) => ({
-        ...prev,
-        clips: prev.clips.map((c) => (c.id === updatedClip.id ? updatedClip : c)),
-      }));
-    } catch (error) {
-      setActionError(error.message || "Could not start this export.");
-    }
-  }
-
-  async function handleExportAll() {
-    if (!activeProject) return;
-    setActionError("");
-    try {
-      await flushProjectPatches(activeProject.id);
-      const updatedProj = await api.exportAll(activeProject.id);
-      setActiveProject(updatedProj);
-    } catch (error) {
-      setActionError(error.message || "Could not start the export queue.");
-    }
-  }
-
-  function handleNudgeStart(delta) {
-    if (!selectedClip || !activeProject) return;
-    const nextStart = Math.max(0, Math.min(selectedClip.end - 1.5, Number((selectedClip.start + delta).toFixed(2))));
-    patchSelectedClip({ start: nextStart });
-    if (seekRef.current) seekRef.current(nextStart);
-  }
-
-  function handleNudgeEnd(delta) {
-    if (!selectedClip || !activeProject) return;
-    const nextEnd = Math.min(activeProject.duration, Math.max(selectedClip.start + 1.5, Number((selectedClip.end + delta).toFixed(2))));
-    patchSelectedClip({ end: nextEnd });
+  let page = null;
+  switch (route.name) {
+    case "projects":
+      page = <Projects />;
+      break;
+    case "editor":
+      page = <Editor />;
+      break;
+    case "analytics":
+      page = <Analytics />;
+      break;
+    case "settings":
+      page = <Settings />;
+      break;
+    case "social":
+      page = <SocialKit />;
+      break;
+    case "dashboard":
+    default:
+      page = <Dashboard />;
+      break;
   }
 
   return (
-    <div className="cp-app-shell h-screen w-screen overflow-hidden flex flex-col bg-[#0A0B0F] text-slate-100">
-      <HeaderBar
-        project={activeProject}
-        settings={settings}
-        onGoHome={async () => {
-          try {
-            if (activeProject) await flushProjectPatches(activeProject.id);
-            setActiveProject(null);
-            setSelectedClipId(null);
-            setProjects(await api.listProjects());
-            setActionError("");
-          } catch (error) {
-            setActionError(error.message || "Could not leave the editor safely.");
-          }
-        }}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onExportAll={handleExportAll}
-        exportingAll={!!hasRendering}
-      />
-
-      {actionError && (
-        <div role="alert" className="flex items-start justify-between gap-3 border-b border-rose-400/20 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-200">
-          <span>{actionError}</span>
-          <button type="button" onClick={() => setActionError("")} className="shrink-0 font-semibold text-rose-100 underline underline-offset-2">
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {!activeProject ? (
-        <IngestView
-          projects={projects}
-          onProjectCreated={handleProjectCreated}
-          onOpenProject={handleOpenProject}
-          onDeleteProject={handleDeleteProject}
-          onOpenSettings={() => setSettingsOpen(true)}
+    <div className={`min-h-screen ${editorial ? "bg-paper text-ink" : "bg-surface text-on-surface"}`}>
+      {/* Mobile drawer backdrop */}
+      {navOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setNavOpen(false)}
+          className="fixed inset-0 z-[55] bg-ink/40 backdrop-blur-[2px] lg:hidden"
         />
-      ) : (
-        <main className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
-          {/* Left: Ranked Viral Clips */}
-          <ClipListSidebar
-            project={activeProject}
-            selectedClipId={selectedClip?.id}
-            onSelectClip={(id) => {
-              setSelectedClipId(id);
-              const target = activeProject.clips.find((c) => c.id === id);
-              if (target) setCurrentTime(target.start);
-            }}
-            onCreateClip={handleCreateClip}
-            onDeleteClip={handleDeleteClip}
-            onReanalyze={handleReanalyze}
-            reanalyzing={reanalyzing}
-          />
-
-          {/* Center: 9:16 Phone Studio & Waveform */}
-          <StudioPreview
-            project={activeProject}
-            clip={selectedClip}
-            currentTime={currentTime}
-            onTimeUpdate={setCurrentTime}
-            onSeekRef={seekRef}
-            onNudgeStart={handleNudgeStart}
-            onNudgeEnd={handleNudgeEnd}
-            onExportClip={handleExportClip}
-            onUpdateStyle={(style) => patchSelectedClip({ style })}
-          />
-
-          {/* Right: 3-Tab Inspector */}
-          <aside className="cp-inspector w-full lg:w-[340px] xl:w-[370px] shrink-0 min-h-[380px] lg:min-h-0 border-l border-white/10 bg-[#0E1017] flex flex-col min-h-0">
-            <div className="grid grid-cols-3 border-b border-white/10 bg-[#0B0D13]">
-              {[
-                { id: "style", label: "Style", Icon: Sliders },
-                { id: "transcript", label: "Captions", Icon: FileText },
-                { id: "social", label: "Social Kit", Icon: Share2 },
-              ].map(({ id, label, Icon }) => (
-                <button
-                  key={id}
-                  onClick={() => setInspectorTab(id)}
-                  className={`py-3 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition ${
-                    inspectorTab === id
-                      ? "border-violet-500 text-white bg-white/[0.03]"
-                      : "border-transparent text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4">
-              {inspectorTab === "style" && (
-                <EditorControls
-                  clip={selectedClip}
-                  onUpdateStyle={(style) => patchSelectedClip({ style })}
-                  onUpdateTitle={(title) => patchSelectedClip({ title })}
-                />
-              )}
-
-              {inspectorTab === "transcript" && (
-                <TranscriptEditor
-                  project={activeProject}
-                  clip={selectedClip}
-                  currentTime={currentTime}
-                  onSeek={(t) => seekRef.current && seekRef.current(t)}
-                  onSaveTranscript={handleSaveTranscript}
-                  onUpdateRange={(st, en) =>
-                    patchSelectedClip({
-                      start: Math.max(0, Math.min(st, en - 1.5)),
-                      end: Math.min(activeProject.duration, Math.max(st + 1.5, en)),
-                    })
-                  }
-                />
-              )}
-
-              {inspectorTab === "social" && (
-                <SocialMetadataPanel
-                  clip={selectedClip}
-                  onUpdateMeta={(platform_meta) => patchSelectedClip({ platform_meta })}
-                />
-              )}
-            </div>
-          </aside>
-        </main>
       )}
-
-      <SettingsModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        settings={settings}
-        onUpdated={(s) => setSettings(s)}
-      />
+      <Sidebar variant={shellVariant} open={navOpen} onClose={() => setNavOpen(false)} />
+      <div className="lg:pl-64">
+        <TopHeader variant={shellVariant} onMenu={() => setNavOpen(true)} />
+        <main className={editorial ? "relative pt-14 min-h-screen" : "relative pt-16 min-h-screen"}>{page}</main>
+      </div>
+      <Toaster />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <StudioProvider>
+      <Shell />
+    </StudioProvider>
   );
 }

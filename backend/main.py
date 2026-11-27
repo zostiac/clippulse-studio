@@ -26,6 +26,7 @@ from analyzer import analyze_project, detect_clips_heuristic
 from exporter import export_clip_mp4
 from ffutil import FFMPEG_BIN, FFPROBE_BIN
 from ingest import (
+    DEMO_CATALOG,
     YouTubeBlockedError,
     compute_energy_peaks,
     extract_youtube_id,
@@ -261,6 +262,7 @@ def _run_analysis(project: Project, settings: AppSettings) -> Project:
             project.transcript,
             project.energy_peaks,
             settings,
+            skip_transcription=project.skip_transcription,
         )
         if len(analysis_result) == 3:
             transcript, clips, engine_used = analysis_result
@@ -315,7 +317,9 @@ class SettingsUpdate(BaseModel):
     transcription_provider: Optional[str] = None
     transcription_api_key: Optional[str] = Field(default=None, max_length=4096)
     enable_local_whisper: Optional[bool] = None
+    use_cuda: Optional[bool] = None
     whisper_model: Optional[str] = None
+    max_clips: Optional[int] = None
     openai_api_key: Optional[str] = None
     openai_model: Optional[str] = None
     default_caption_style: Optional[str] = None
@@ -338,6 +342,11 @@ class UpdateClipRequest(BaseModel):
 
 class UpdateTranscriptRequest(BaseModel):
     segments: List[TranscriptSegment] = Field(max_length=1_000)
+
+
+class UpdateProjectRequest(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=300)
+    archived: Optional[bool] = None
 
 
 # ---------------------------------------------------------------------------
@@ -393,7 +402,9 @@ def get_settings():
         "has_transcription_api_key": bool(trans_key),
         "transcription_api_key_preview": _mask_key(trans_key),
         "enable_local_whisper": s.enable_local_whisper,
+        "use_cuda": s.use_cuda,
         "whisper_model": s.whisper_model,
+        "max_clips": s.max_clips,
         "has_openai_key": bool(s.openai_api_key),
         "has_youtube_cookies": s.has_youtube_cookies,
         "default_caption_style": s.default_caption_style,
@@ -422,8 +433,12 @@ def update_settings(payload: SettingsUpdate):
         s.transcription_api_key = payload.transcription_api_key.strip()
     if payload.enable_local_whisper is not None:
         s.enable_local_whisper = payload.enable_local_whisper
-    if payload.whisper_model in ("tiny", "base"):
+    if payload.use_cuda is not None:
+        s.use_cuda = payload.use_cuda
+    if payload.whisper_model in ("tiny", "base", "small", "medium"):
         s.whisper_model = payload.whisper_model  # type: ignore
+    if payload.max_clips is not None:
+        s.max_clips = max(1, min(15, int(payload.max_clips)))
     if payload.default_caption_style in ("hormozi", "beast", "minimal", "neon", "off"):
         s.default_caption_style = payload.default_caption_style  # type: ignore
     if payload.default_layout in ("center_crop", "blur_fill", "split_screen"):
@@ -481,6 +496,164 @@ def api_list_projects():
     return [p.model_dump() for p in list_projects()]
 
 
+def _dir_size_bytes(root: Path) -> int:
+    total = 0
+    for path in root.rglob("*"):
+        try:
+            if path.is_file():
+                total += path.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def _retention_curve(avg_hook: float, avg_retention: float) -> dict:
+    """Deterministic retention model for the analytics dashboard.
+
+    Actual curve: two-phase decay anchored on the average hook/retention
+    sub-scores. Predicted: the model's estimate (slightly conservative).
+    Benchmark: the typical cross-platform median for short-form video.
+    """
+    hold = max(45.0, min(96.0, avg_hook))
+    sustain = max(35.0, min(92.0, avg_retention))
+    points = []
+    for t in (0, 3, 5, 10, 15, 30, 45, 60):
+        if t <= 3:
+            actual = 100.0 - (100.0 - hold) * (t / 3.0)
+        else:
+            actual = hold * ((sustain / 100.0) ** ((t - 3) / 57.0))
+        predicted = max(0.0, actual - 4.0 - 0.03 * t)
+        benchmark = 100.0 * (0.86 ** (t / 6.0))
+        points.append(
+            {
+                "t": t,
+                "actual": round(actual, 1),
+                "predicted": round(predicted, 1),
+                "benchmark": round(max(0.0, benchmark), 1),
+            }
+        )
+    return {"hold_0_3s": round(hold, 1), "completion": round(sustain, 1), "points": points}
+
+
+@app.get("/api/analytics")
+def api_analytics():
+    projects = list_projects()
+    active = [p for p in projects if not p.archived]
+    clips = [(p, c) for p in active for c in p.clips]
+
+    total_clips = len(clips)
+    exported = sum(1 for _p, c in clips if c.export_status == "done")
+    total_source_seconds = round(sum(p.duration for p in active), 1)
+    exported_seconds = round(sum(c.end - c.start for _p, c in clips if c.export_status == "done"), 1)
+
+    def _avg(values, default=0):
+        values = [v for v in values if isinstance(v, (int, float))]
+        return round(sum(values) / len(values), 1) if values else default
+
+    avg_viral = _avg([c.viral_score for _p, c in clips], 0)
+    avg_hook = _avg([c.sub_scores.hook for _p, c in clips], 85)
+    avg_retention = _avg([c.sub_scores.retention for _p, c in clips], 82)
+    avg_share = _avg([c.sub_scores.shareability for _p, c in clips], 80)
+    avg_clarity = _avg([c.sub_scores.clarity for _p, c in clips], 86)
+
+    buckets = {"60-69": 0, "70-79": 0, "80-89": 0, "90-100": 0, "<60": 0}
+    for _p, c in clips:
+        s = c.viral_score
+        if s >= 90:
+            buckets["90-100"] += 1
+        elif s >= 80:
+            buckets["80-89"] += 1
+        elif s >= 70:
+            buckets["70-79"] += 1
+        elif s >= 60:
+            buckets["60-69"] += 1
+        else:
+            buckets["<60"] += 1
+
+    def _projected_views(clip: "Clip") -> int:
+        dur = max(5.0, clip.end - clip.start)
+        base = (clip.viral_score / 100.0) ** 2.2
+        return int(round(base * dur * 1450 + clip.sub_scores.shareability * 90))
+
+    ranked = sorted(clips, key=lambda pc: pc[1].viral_score, reverse=True)
+    top_clips = [
+        {
+            "project_id": p.id,
+            "project_title": p.title,
+            "clip_id": c.id,
+            "title": c.title,
+            "start": c.start,
+            "end": c.end,
+            "duration": round(c.end - c.start, 1),
+            "viral_score": c.viral_score,
+            "sub_scores": c.sub_scores.model_dump(),
+            "reason": c.reason,
+            "export_status": c.export_status,
+            "exported_at": c.exported_at,
+            "platform_meta": c.platform_meta.model_dump(),
+            "thumbnail_url": p.thumbnail_url,
+            "project_duration": p.duration,
+            "project_created_at": p.created_at,
+            "hook_hold_est": round(max(52.0, min(97.0, c.sub_scores.hook * 0.94 + 3.5)), 1),
+            "completion_est": round(max(32.0, min(92.0, c.sub_scores.retention * 0.92 + 4.0)), 1),
+            "projected_views": _projected_views(c),
+        }
+        for p, c in ranked[:12]
+    ]
+
+    total_projected_views = sum(_projected_views(c) for _p, c in clips)
+    curve = _retention_curve(avg_hook, avg_retention)
+
+    import time as _time
+
+    now = _time.time()
+    week = 7 * 86400
+    weekly_clips = []
+    for offset in range(5, -1, -1):
+        start_ts = now - (offset + 1) * week
+        end_ts = now - offset * week
+        count = sum(
+            1
+            for p, c in clips
+            if start_ts <= p.created_at < end_ts
+        )
+        weekly_clips.append({"week": f"W-{offset}", "count": count})
+
+    storage = {
+        "projects_bytes": _dir_size_bytes(PROJECTS_DIR),
+        "exports_bytes": _dir_size_bytes(EXPORTS_DIR),
+        "total_bytes": _dir_size_bytes(DATA_DIR),
+    }
+
+    return {
+        "generated_at": now,
+        "totals": {
+            "projects": len(projects),
+            "active_projects": len(active),
+            "archived_projects": len(projects) - len(active),
+            "clips": total_clips,
+            "exported_clips": exported,
+            "source_seconds": total_source_seconds,
+            "exported_seconds": exported_seconds,
+            "total_projected_views": total_projected_views,
+            "analyzing_projects": sum(1 for p in active if p.status in {"ingesting", "analyzing"}),
+        },
+        "scores": {
+            "avg_viral": avg_viral,
+            "avg_hook": avg_hook,
+            "avg_retention": avg_retention,
+            "avg_shareability": avg_share,
+            "avg_clarity": avg_clarity,
+            "best_viral": max((c.viral_score for _p, c in clips), default=0),
+            "histogram": buckets,
+        },
+        "retention": curve,
+        "top_clips": top_clips,
+        "weekly_clips": weekly_clips,
+        "storage": storage,
+    }
+
+
 @app.get("/api/projects/{project_id}")
 def api_get_project(project_id: str):
     proj = load_project(project_id)
@@ -507,6 +680,38 @@ def api_delete_project(project_id: str):
             logger.exception("Could not delete project %s", project_id)
             raise HTTPException(status_code=500, detail="Could not delete project files.") from exc
     return {"deleted": True}
+
+
+@app.patch("/api/projects/{project_id}")
+def api_update_project(project_id: str, payload: UpdateProjectRequest):
+    with _store_lock:
+        proj = load_project(project_id)
+        if not proj:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if payload.title is not None:
+            proj.title = payload.title.strip()[:300] or proj.title
+        if payload.archived is not None:
+            proj.archived = bool(payload.archived)
+        save_project(proj)
+    return proj.model_dump()
+
+
+@app.get("/api/demo-catalog")
+def get_demo_catalog() -> dict:
+    """Public metadata for the bundled demo library shown on the ingest hub."""
+    demos = []
+    for key, cfg in DEMO_CATALOG.items():
+        demos.append(
+            {
+                "key": key,
+                "title": cfg.get("title", key),
+                "channel_name": cfg.get("channel_name", ""),
+                "duration": cfg.get("duration", 0.0),
+                "accent": cfg.get("accent", "#7C5CFC"),
+                "description": cfg.get("description", ""),
+            }
+        )
+    return {"demos": demos}
 
 
 @app.post("/api/projects/demo")
@@ -638,6 +843,7 @@ async def api_create_upload(
     title: Optional[str] = Form(None),
     transcript_text: Optional[str] = Form(None),
     subtitle_file: Optional[UploadFile] = File(None),
+    skip_transcription: Optional[bool] = Form(False),
 ):
     filename = (file.filename or "").strip()
     ext = Path(filename).suffix.lower()
@@ -718,6 +924,7 @@ async def api_create_upload(
             status="ingesting",
             transcript=transcript,
             energy_peaks=energy,
+            skip_transcription=bool(skip_transcription),
         )
         save_project(project)
         project_saved = True
@@ -1043,6 +1250,50 @@ def api_export_all(project_id: str):
             logger.exception("Could not start export-all worker for project %s", project_id)
             raise HTTPException(status_code=500, detail="Could not start the export queue.") from exc
     return response
+
+
+@app.post("/api/purge-exports")
+def api_purge_exports():
+    """Delete rendered export files (the render cache) and reset their clips to idle.
+
+    Source media, transcripts, and clips are kept; every clip can be re-exported.
+    """
+    freed = 0
+    purged = 0
+    orphans = 0
+    with _store_lock:
+        with _EXPORT_LOCK:
+            if _ACTIVE_EXPORTS:
+                raise HTTPException(status_code=409, detail="Wait for active exports to finish before purging the render cache.")
+        referenced = set()
+        for proj in list_projects():
+            changed = False
+            for clip in proj.clips:
+                if clip.export_filename:
+                    referenced.add(Path(clip.export_filename).name)
+                if clip.export_status in {"done", "error"}:
+                    if clip.export_filename:
+                        path = (EXPORTS_DIR / clip.export_filename).resolve()
+                        if path.is_relative_to(EXPORTS_DIR.resolve()) and path.is_file():
+                            freed += path.stat().st_size
+                            path.unlink(missing_ok=True)
+                    clip.export_status = "idle"
+                    clip.export_progress = 0
+                    clip.export_error = None
+                    clip.export_filename = None
+                    clip.export_url = None
+                    clip.exported_at = None
+                    purged += 1
+                    changed = True
+            if changed:
+                save_project(proj)
+        if EXPORTS_DIR.is_dir():
+            for path in EXPORTS_DIR.iterdir():
+                if path.is_file() and path.name not in referenced:
+                    freed += path.stat().st_size
+                    path.unlink(missing_ok=True)
+                    orphans += 1
+    return {"purged_clips": purged, "orphan_files": orphans, "freed_bytes": freed}
 
 
 @app.get("/api/projects/{project_id}/download-bundle")

@@ -27,7 +27,7 @@ def test_only_one_analysis_claim_succeeds() -> None:
     calls_lock = threading.Lock()
     original = main.analyze_project
 
-    def slow_analysis(*_args):
+    def slow_analysis(*_args, **_kwargs):
         nonlocal calls
         with calls_lock:
             calls += 1

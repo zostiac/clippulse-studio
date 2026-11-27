@@ -85,6 +85,7 @@ export const api = {
   listProjects: () => req("/api/projects"),
   getProject: (id) => req(`/api/projects/${encodeURIComponent(id)}`),
   deleteProject: (id) => req(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  purgeExports: () => req("/api/purge-exports", { method: "POST" }),
 
   createDemo: (demo_key) =>
     req("/api/projects/demo", {
@@ -141,18 +142,18 @@ export const api = {
 
   exportAll: (projectId) =>
     req(`/api/projects/${encodeURIComponent(projectId)}/export-all`, { method: "POST" }),
+
+  updateProject: (projectId, payload) =>
+    req(`/api/projects/${encodeURIComponent(projectId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+
+  getAnalytics: () => req("/api/analytics"),
+
+  getHealth: () => req("/api/health"),
+
+  downloadBundleUrl: (projectId) => `/api/projects/${encodeURIComponent(projectId)}/download-bundle`,
 };
 
-export function fmtTime(sec) {
-  const s = Math.max(0, Number(sec) || 0);
-  const mins = Math.floor(s / 60);
-  const rem = s % 60;
-  return `${mins}:${rem < 10 ? "0" : ""}${rem.toFixed(1)}`;
-}
-
-export function fmtTimeShort(sec) {
-  const s = Math.max(0, Math.round(Number(sec) || 0));
-  const mins = Math.floor(s / 60);
-  const rem = s % 60;
-  return `${mins}:${rem < 10 ? "0" : ""}${rem}`;
-}

@@ -399,7 +399,7 @@ with tempfile.TemporaryDirectory() as wav_td:
             out_path.write_bytes(test_wav.read_bytes())
 
         analyzer._extract_audio = _fake_extract
-        analyzer._get_local_whisper = lambda _name: _FakeWhisperModel()
+        analyzer._get_local_whisper = lambda _name, **_kwargs: _FakeWhisperModel()
         analyzer.transcribe_with_local_whisper(Path(wav_td) / "fake.mp4", "tiny")
     finally:
         analyzer._extract_audio = orig_extract

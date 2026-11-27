@@ -67,14 +67,24 @@ _whisper_lock = threading.Lock()
 _whisper_cache: Dict[str, object] = {}
 
 
-def _get_local_whisper(model_name: str):
+def _get_local_whisper(model_name: str, use_cuda: bool = True):
     from faster_whisper import WhisperModel
+
+    device = "cuda" if use_cuda else "cpu"
+    compute_type = "float16" if use_cuda else "int8"
+    cache_key = f"{model_name}:{device}"
     with _whisper_lock:
-        if model_name not in _whisper_cache:
-            _whisper_cache[model_name] = WhisperModel(
-                model_name, device="cpu", compute_type="int8"
-            )
-        return _whisper_cache[model_name]
+        if cache_key not in _whisper_cache:
+            try:
+                _whisper_cache[cache_key] = WhisperModel(
+                    model_name, device=device, compute_type=compute_type
+                )
+            except Exception:
+                # CUDA unavailable (or the model rejected the device): CPU INT8 fallback.
+                _whisper_cache[cache_key] = WhisperModel(
+                    model_name, device="cpu", compute_type="int8"
+                )
+        return _whisper_cache[cache_key]
 
 
 def _extract_audio(video_path: Path, out_args: List[str], out_path: Path) -> None:
@@ -272,12 +282,14 @@ def _iter_wav_chunks(wav_path: Path, chunk_seconds: int = 60, overlap_seconds: i
             frame_start += step_frames
 
 
-def transcribe_with_local_whisper(video_path: Path, model_name: str = "tiny") -> List[TranscriptSegment]:
+def transcribe_with_local_whisper(
+    video_path: Path, model_name: str = "tiny", use_cuda: bool = True
+) -> List[TranscriptSegment]:
     """Transcribe bounded audio windows to keep RAM use predictable on long videos."""
     wav_path = video_path.parent / "audio_local.wav"
     try:
         _extract_audio(video_path, ["-c:a", "pcm_s16le", "-f", "wav"], wav_path)
-        model = _get_local_whisper(model_name or "tiny")
+        model = _get_local_whisper(model_name or "tiny", use_cuda=use_cuda)
         segments: List[TranscriptSegment] = []
         from ingest import distribute_words
 
@@ -428,6 +440,8 @@ def _parse_llm_clips_json(
         return None
     clips: List[Clip] = []
     for item in items:
+        if len(clips) >= settings.max_clips:
+            break
         st = max(0.0, float(item.get("start", 0.0)))
         en = min(duration, float(item.get("end", st + 20.0)))
         if en - st < 6.0:
@@ -633,7 +647,7 @@ def detect_clips_heuristic(
                     platform_meta=_build_platform_meta(title, full_text, hook_banner),
                 )
             )
-            if len(clips) >= 5:
+            if len(clips) >= settings.max_clips:
                 break
     else:
         win = min(30.0, max(10.0, duration * 0.35))
@@ -641,14 +655,14 @@ def detect_clips_heuristic(
         t = 0.0
         idx = 1
         windows = []
-        while t + min(8.0, duration * 0.25) < duration and len(windows) < 6:
+        while t + min(8.0, duration * 0.25) < duration and len(windows) < max(2, settings.max_clips):
             en = min(duration, t + win)
             avg_e, peak_e = _energy_in_range(energy_peaks, t, en, duration)
             sc = int(min(95, max(68, 68 + avg_e * 18 + peak_e * 10)))
             windows.append((sc, t, en, avg_e, peak_e))
             t += step
         windows.sort(key=lambda x: x[0], reverse=True)
-        for sc, st, en, avg_e, peak_e in windows[:4]:
+        for sc, st, en, avg_e, peak_e in windows[: settings.max_clips]:
             title = f"High-Energy Segment #{idx}"
             hook = f"HIGHLIGHT MOMENT #{idx}"
             clips.append(
@@ -687,13 +701,14 @@ def analyze_project(
     transcript: List[TranscriptSegment],
     energy_peaks: List[float],
     settings: AppSettings,
+    skip_transcription: bool = False,
 ) -> Tuple[List[TranscriptSegment], List[Clip], str, List[str]]:
     engine_used = "local_free"
     warnings: List[str] = []
     api_key = (settings.api_key or settings.openai_api_key or "").strip()
 
     # 1. Free or cloud transcription if no subtitles exist yet
-    if not transcript:
+    if not transcript and not skip_transcription:
         attempted = False
         failures: List[str] = []
 
@@ -725,7 +740,9 @@ def analyze_project(
         if not transcript and settings.enable_local_whisper:
             attempted = True
             try:
-                transcript = transcribe_with_local_whisper(video_path, settings.whisper_model)
+                transcript = transcribe_with_local_whisper(
+                    video_path, settings.whisper_model, use_cuda=getattr(settings, "use_cuda", True)
+                )
                 if transcript:
                     engine_used = "local_whisper"
                 else:
