@@ -559,7 +559,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-space-sm">
               <h2 className="font-headline-md text-headline-md text-on-surface font-semibold">Recent Studio Projects</h2>
               <span className="px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface font-label-sm text-label-sm font-semibold">
-                {projects.length + analyzing} active
+                {projects.length} active
               </span>
             </div>
             <div className="flex items-center gap-space-xs">

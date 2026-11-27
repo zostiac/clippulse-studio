@@ -1,14 +1,14 @@
 const PRESET_HIGHLIGHTS = {
   hormozi: "#FACC15",
   beast: "#22D3EE",
-  minimal: "#A78BFA",
+  minimal: "#F8FAFC",
   neon: "#E879F9",
 };
 
 const CUSTOM_HIGHLIGHTS = {
   yellow: "#FACC15",
   cyan: "#22D3EE",
-  violet: "#A78BFA",
+  amber: "#F59E0B",
   green: "#34D399",
   white: "#FFFFFF",
 };

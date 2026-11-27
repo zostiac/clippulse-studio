@@ -14,7 +14,11 @@ function Toaster() {
   if (!toasts.length) return null;
   const icon = { success: "check_circle", error: "error", info: "info" };
   return (
-    <div className="fixed bottom-6 right-6 z-[80] flex flex-col gap-space-sm items-end pointer-events-none">
+    <div
+      className="fixed bottom-6 right-6 z-[80] flex flex-col gap-space-sm items-end pointer-events-none"
+      role="status"
+      aria-live="polite"
+    >
       {toasts.map((t) => (
         <button
           key={t.id}
@@ -67,9 +71,9 @@ function Shell() {
   return (
     <div className={`min-h-screen ${editorial ? "bg-[#fafafa] text-[#0f172a]" : "bg-surface text-on-surface"}`}>
       <Sidebar variant={shellVariant} />
-      <div className="pl-64">
+      <div className="lg:pl-64">
         <TopHeader variant={shellVariant} />
-        <main className={editorial ? "relative pt-14 min-h-screen" : "relative pt-16 min-h-screen"}>{page}</main>
+        <main className={editorial ? "relative pt-14 lg:pt-14 min-h-screen" : "relative pt-16 lg:pt-16 min-h-screen"}>{page}</main>
       </div>
       <Toaster />
     </div>

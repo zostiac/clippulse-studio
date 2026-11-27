@@ -39,6 +39,7 @@ export function StudioProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState({});
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const pollers = useRef(new Set());
 
   // ---- routing -------------------------------------------------------------
@@ -55,6 +56,7 @@ export function StudioProvider({ children }) {
       window.location.hash = hash;
     }
     window.scrollTo({ top: 0 });
+    setSidebarOpen(false);
   }, []);
 
   // ---- toasts --------------------------------------------------------------
@@ -413,6 +415,8 @@ export function StudioProvider({ children }) {
       search,
       setSearch,
       busy,
+      sidebarOpen,
+      setSidebarOpen,
       refreshProjects,
       refreshSettings,
       refreshHealth,
@@ -446,6 +450,7 @@ export function StudioProvider({ children }) {
       dismissToast,
       search,
       busy,
+      sidebarOpen,
       refreshProjects,
       refreshSettings,
       refreshHealth,

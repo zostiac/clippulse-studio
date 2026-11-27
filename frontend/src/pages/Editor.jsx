@@ -926,7 +926,7 @@ export default function Editor() {
                     <option value="style">Style default</option>
                     <option value="yellow">Yellow</option>
                     <option value="cyan">Cyan</option>
-                    <option value="violet">Violet</option>
+                    <option value="amber">Amber</option>
                     <option value="green">Green</option>
                     <option value="white">White</option>
                   </select>
