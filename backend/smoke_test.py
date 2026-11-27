@@ -187,11 +187,12 @@ finally:
     analyzer.transcribe_with_local_whisper = _orig_local_whisper
 
 # No provider configured at all -> heuristic-only fallback, no exception.
-tr, clips, eng = analyzer.analyze_project(
+tr, clips, eng, warnings = analyzer.analyze_project(
     "proj_t2", "t", __file__, 60.0, [], [],
     AppSettings(ai_provider="local_free", enable_local_whisper=False),
 )
 assert tr == [] and clips and eng == "local_free"
+assert warnings == []
 print("heuristic-only fallback OK, clips:", len(clips))
 
 # --- FastAPI endpoints ------------------------------------------------------
@@ -487,7 +488,7 @@ _orig_llm = analyzer.detect_clips_with_llm
 try:
     analyzer.transcribe_with_cloud_whisper = _fake_cloud_whisper
     analyzer.detect_clips_with_llm = _fake_llm_clips
-    tr_h, clips_h, eng_h = analyzer.analyze_project(
+    tr_h, clips_h, eng_h, warnings_h = analyzer.analyze_project(
         "proj_hybrid",
         "Hybrid test",
         Path(__file__),

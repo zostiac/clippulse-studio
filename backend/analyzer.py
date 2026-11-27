@@ -591,7 +591,10 @@ def detect_clips_heuristic(
 
         candidates = []
         n = len(transcript)
+        max_candidates = 20_000
         for i in range(n):
+            if len(candidates) >= max_candidates:
+                break
             for j in range(i, n):
                 st = transcript[i].start
                 en = transcript[j].end
@@ -604,6 +607,8 @@ def detect_clips_heuristic(
                 score, sub, reason = _score_window(segs, energy_peaks, duration)
                 dur_bonus = max(0, 4 - abs(d - target_dur) * 0.2)
                 candidates.append((score + dur_bonus, score, st, en, segs, sub, reason))
+                if len(candidates) >= max_candidates:
+                    break
 
         if not candidates:
             st = transcript[0].start
@@ -697,8 +702,9 @@ def analyze_project(
     energy_peaks: List[float],
     settings: AppSettings,
     skip_transcription: bool = False,
-) -> Tuple[List[TranscriptSegment], List[Clip], str]:
+) -> Tuple[List[TranscriptSegment], List[Clip], str, List[str]]:
     engine_used = "local_free"
+    warnings: List[str] = []
     api_key = (settings.api_key or settings.openai_api_key or "").strip()
 
     # 1. Free or cloud transcription if no subtitles exist yet
@@ -751,6 +757,8 @@ def analyze_project(
                 + ". Enable a free cloud provider in Settings, turn on Local Whisper, "
                 "or upload a .srt/.vtt subtitle file / paste a transcript with the video."
             )
+        if transcript and failures:
+            warnings.extend(failures)
 
     # 2. LLM viral clip scoring (if free-tier or OpenAI key configured), else Local Heuristic
     clips: Optional[List[Clip]] = None
@@ -758,8 +766,12 @@ def analyze_project(
         clips = detect_clips_with_llm(project_id, title, duration, transcript, settings)
         if clips:
             engine_used = f"{settings.ai_provider}_free" if settings.ai_provider in ("groq", "gemini", "openrouter") else settings.ai_provider
+        else:
+            warnings.append(
+                f"{settings.ai_provider} clip scoring was unavailable; local heuristic scoring was used."
+            )
 
     if not clips:
         clips = detect_clips_heuristic(project_id, duration, transcript, energy_peaks, settings)
 
-    return transcript, clips, engine_used
+    return transcript, clips, engine_used, warnings

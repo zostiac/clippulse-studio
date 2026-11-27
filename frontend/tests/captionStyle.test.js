@@ -12,6 +12,7 @@ test("caption casing follows preset defaults and explicit overrides", () => {
   assert.equal(formatCaptionWord("Hello", { caption_case: "uppercase" }), "HELLO");
   assert.equal(formatCaptionWord("Hello", { caption_case: "lowercase" }), "hello");
   assert.equal(formatCaptionWord("Hello", { caption_case: "sentence" }), "Hello");
+  assert.equal(formatCaptionWord("HELLO WORLD", { caption_case: "sentence" }), "Hello world");
 });
 
 test("caption highlight colors support preset and custom choices", () => {

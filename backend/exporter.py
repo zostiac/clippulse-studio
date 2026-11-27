@@ -76,6 +76,9 @@ def _caption_case(text: str, mode: str, preset: str) -> str:
         return text.upper()
     if selected == "lowercase":
         return text.lower()
+    if selected == "sentence":
+        lowered = text.lower()
+        return lowered[:1].upper() + lowered[1:]
     return text
 
 
