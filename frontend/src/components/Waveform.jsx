@@ -72,10 +72,29 @@ export default function Waveform({
     <div className="flex flex-col gap-1 select-none">
       <div
         ref={trackRef}
+        role="slider"
+        tabIndex={0}
+        aria-label="Clip waveform scrubber"
+        aria-valuemin={Math.round(start * 10) / 10}
+        aria-valuemax={Math.round(end * 10) / 10}
+        aria-valuenow={Math.round((currentTime ?? 0) * 10) / 10}
         className="relative w-full h-16 bg-surface-container rounded-lg overflow-hidden cursor-crosshair flex items-center px-1"
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onClick={(e) => onSeek?.(timeAt(e.clientX))}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+            e.preventDefault();
+            const delta = e.key === "ArrowLeft" ? -1 : 1;
+            onSeek?.(Math.min(end, Math.max(start, (currentTime ?? 0) + delta)));
+          } else if (e.key === "Home") {
+            e.preventDefault();
+            onSeek?.(start);
+          } else if (e.key === "End") {
+            e.preventDefault();
+            onSeek?.(end);
+          }
+        }}
       >
         <svg className="w-full h-12 text-outline-variant" preserveAspectRatio="none" viewBox={`0 0 ${W} ${H}`}>
           <path d={peaksPath(energyPeaks, W, H)} fill="currentColor" opacity="0.7" />
@@ -84,7 +103,7 @@ export default function Waveform({
         {/* Selected range */}
         <div
           className="absolute top-0 bottom-0 bg-primary-container/15 rounded border-x-2 border-primary-container flex justify-between items-center px-1"
-          style={{ left: `${selLeft}%`, width: `${Math.max(0, selRight - selLeft)}%` }}
+          style={{ left: `${selLeft}%`, width: `${Math.max(0, selRight - selLeft)}%`, minWidth: "16px" }}
         >
           <button
             type="button"
@@ -107,9 +126,6 @@ export default function Waveform({
       </div>
       <div className="flex items-center justify-between font-label-sm text-label-sm text-on-surface-variant px-1">
         <span>00:00</span>
-        <span className="font-semibold text-on-surface">
-          Selection: {fmtTC(start)} → {fmtTC(end)} ({Math.max(0, end - start).toFixed(1)}s)
-        </span>
         <span>{fmtTC(duration)}</span>
       </div>
     </div>

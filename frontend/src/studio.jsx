@@ -248,6 +248,21 @@ export function StudioProvider({ children }) {
     [toast, refreshAnalytics]
   );
 
+  const purgeExports = useCallback(async () => {
+    try {
+      const res = await api.purgeExports();
+      await refreshProjects();
+      refreshAnalytics();
+      const freed = res?.freed_bytes || 0;
+      const freedLabel = freed >= 1024 * 1024 ? `${(freed / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(freed / 1024))} KB`;
+      toast(`Render cache purged — ${res?.purged_clips || 0} clip(s) reset, ${freedLabel} freed.`, "success");
+      return res;
+    } catch (err) {
+      toast(`Purge failed: ${err.message}`, "error");
+      return null;
+    }
+  }, [toast, refreshProjects, refreshAnalytics]);
+
   const setArchived = useCallback(
     async (projectId, archived) => {
       try {
@@ -423,6 +438,7 @@ export function StudioProvider({ children }) {
       uploadVideo,
       reanalyze,
       deleteProject,
+      purgeExports,
       setArchived,
       renameProject,
       createClip,
@@ -456,6 +472,7 @@ export function StudioProvider({ children }) {
       uploadVideo,
       reanalyze,
       deleteProject,
+      purgeExports,
       setArchived,
       renameProject,
       createClip,

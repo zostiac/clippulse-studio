@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useStudio, routeTo } from "../studio.jsx";
 import { fmtDur, fmtRelTime } from "../utils/format.js";
 
@@ -70,7 +70,7 @@ function ProjectCard({ project }) {
             <img
               className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
               src={project.thumbnail_url}
-              alt=""
+              alt={project.title}
             />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-surface-container to-surface-dim" />
@@ -96,29 +96,29 @@ function ProjectCard({ project }) {
               {fmtDur(project.duration)}
             </span>
           </div>
-          <div className="absolute bottom-space-sm left-space-sm right-space-sm flex items-center justify-between text-inverse-on-surface">
-            <div className="flex items-center gap-2">
+          <div className="absolute bottom-space-sm left-space-sm right-space-sm flex items-center justify-between gap-2 text-inverse-on-surface">
+            <div className="flex items-center gap-2 min-w-0">
               {analyzing ? (
                 <>
-                  <span className="w-2.5 h-2.5 rounded-full bg-secondary animate-ping" />
-                  <span className="font-label-sm text-label-sm font-medium">{project.status_detail || "Analyzing…"}</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-secondary animate-ping shrink-0" />
+                  <span className="font-label-sm text-label-sm font-medium truncate">{project.status_detail || "Analyzing…"}</span>
                 </>
               ) : (
                 <>
-                  <span className="w-2.5 h-2.5 rounded-full bg-tertiary-container animate-ping" />
-                  <span className="font-label-sm text-label-sm font-medium">{project.clips?.length || 0} Shorts Extracted</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-tertiary-container animate-ping shrink-0" />
+                  <span className="font-label-sm text-label-sm font-medium truncate">{project.clips?.length || 0} Shorts Extracted</span>
                 </>
               )}
             </div>
-            <div className="flex items-center gap-1 font-label-sm text-label-sm bg-primary-container/90 px-2 py-0.5 rounded">
+            <div className="flex items-center gap-1 font-label-sm text-label-sm bg-primary-container/90 px-2 py-0.5 rounded shrink-0">
               <span className="material-symbols-outlined text-[14px]">auto_awesome</span>
               <span>9:16 Ready</span>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-space-xs mb-1">
+        <div className="flex flex-wrap items-center gap-x-space-xs gap-y-1 mb-1">
           <span className="font-label-sm text-label-sm text-on-surface-variant font-medium">
-            Last modified {fmtRelTime(project.created_at)}
+            Last modified {fmtRelTime(project.updated_at || project.created_at)}
           </span>
           <span className="text-on-surface-variant">•</span>
           <span className="font-label-sm text-label-sm text-primary-container font-semibold">{exported} Clips Exported</span>
@@ -180,9 +180,22 @@ export default function Dashboard() {
   const [projectTitle, setProjectTitle] = useState("");
   const [subtitleSource, setSubtitleSource] = useState("whisper");
   const [view, setView] = useState("grid");
+  const fileInputRef = useRef(null);
+
+  // ⌘U / Ctrl+U opens the upload file picker (as the dropzone copy promises).
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "u") {
+        e.preventDefault();
+        setTab("tab-upload");
+        window.setTimeout(() => fileInputRef.current?.click(), 80);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const recent = [...projects].sort((a, b) => b.created_at - a.created_at).slice(0, 4);
-  const analyzing = projects.filter((p) => p.status === "analyzing" || p.status === "ingesting").length;
 
   const onFindClips = () => {
     const url = ytUrl.trim();
@@ -200,10 +213,19 @@ export default function Dashboard() {
     uploadVideo(fd);
   };
 
-  const aiLabel =
-    settings?.ai_provider === "local_free"
-      ? `Whisper ${(settings?.whisper_model || "tiny").toUpperCase()} + Heuristic Scorer`
-      : `${settings?.ai_provider?.toUpperCase()} + Whisper Base`;
+  // The label must reflect the engine that will actually run: cloud providers
+  // only engage when an API key is saved, otherwise everything stays local.
+  const hasKey = Boolean(settings?.api_key_preview);
+  const cloud = settings?.ai_provider && settings.ai_provider !== "local_free" && hasKey;
+  const aiLabel = !cloud
+    ? `Whisper ${(settings?.whisper_model || "small").toUpperCase()} + Heuristic Scorer`
+    : settings.ai_provider === "groq"
+      ? "Groq Large v3 + Llama 3.3"
+      : settings.ai_provider === "openai"
+        ? "Whisper-1 + GPT-4o-mini"
+        : settings.ai_provider === "gemini"
+          ? "Gemini 1.5 Flash + Local Whisper"
+          : "Mistral / DeepSeek + Local Whisper";
 
   return (
     <div className="flex flex-col w-full">
@@ -213,7 +235,7 @@ export default function Dashboard() {
 
         {/* HERO */}
         <div className="flex flex-col items-center text-center max-w-4xl mx-auto mb-space-xl">
-          <div className="inline-flex items-center gap-space-xs px-space-md py-1 rounded-full bg-surface-container-low shadow-sm mb-space-md">
+          <div className="inline-flex flex-wrap items-center justify-center gap-space-xs px-space-md py-1 rounded-full bg-surface-container-low shadow-sm mb-space-md">
             <span className="w-2 h-2 rounded-full bg-tertiary-container animate-pulse" />
             <span className="font-label-sm text-label-sm text-on-surface-variant font-medium tracking-wide">
               ✦ 100% Free • Local Whisper AI + Groq / Gemini Acceleration
@@ -229,7 +251,7 @@ export default function Dashboard() {
             AI viral hook scoring, smart 9:16 reframing &amp; split-screen face tracking, dynamic word-by-word animated
             captions, and instantaneous 1080p MP4 exports.
           </p>
-          <div className="flex items-center justify-center gap-space-lg mt-space-md pt-space-xs text-on-surface-variant">
+          <div className="flex flex-wrap items-center justify-center gap-x-space-lg gap-y-space-sm mt-space-md pt-space-xs text-on-surface-variant">
             <div className="flex items-center gap-1.5">
               <span className="material-symbols-outlined text-[16px] text-tertiary-container">verified</span>
               <span className="font-label-sm text-label-sm tracking-wide uppercase">No Watermark</span>
@@ -251,7 +273,7 @@ export default function Dashboard() {
         <div className="max-w-5xl mx-auto w-full mb-space-xl">
           <div className="bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden">
             <div className="flex items-center justify-between px-space-md pt-space-md bg-surface-container-low/60">
-              <div className="flex items-center gap-space-xs" role="tablist">
+              <div className="flex flex-wrap items-center gap-space-xs" role="tablist">
                 {[
                   { id: "tab-youtube", label: "YouTube Link", icon: "play_circle", iconClass: "text-error", fast: true },
                   { id: "tab-upload", label: "Upload Video", icon: "cloud_upload", iconClass: "text-primary-container" },
@@ -293,13 +315,13 @@ export default function Dashboard() {
                 <div className="flex flex-col gap-space-xs">
                   <label className="font-body-md text-body-md font-medium text-on-surface flex items-center justify-between" htmlFor="youtube-url">
                     <span>Paste a YouTube video, podcast, or livestream URL</span>
-                    <span className="font-label-sm text-label-sm text-on-surface-variant">Max length: 3h 30m</span>
+                    <span className="font-label-sm text-label-sm text-on-surface-variant">Max file size: 4 GB</span>
                   </label>
                   <div className="relative flex flex-col sm:flex-row items-stretch gap-space-xs bg-surface-container-low p-1.5 rounded-lg shadow-inner">
                     <div className="relative flex-1 flex items-center">
                       <span className="material-symbols-outlined absolute left-space-md text-on-surface-variant text-[20px]">link</span>
                       <input
-                        className="w-full pl-11 pr-space-md py-3.5 bg-surface-container-lowest rounded-lg font-body-md text-body-md text-on-surface placeholder:text-on-surface-variant focus:outline-none shadow-sm"
+                        className="w-full pl-11 pr-space-md py-3.5 bg-surface-container-lowest rounded-lg font-body-md text-body-md text-on-surface placeholder:text-on-surface-variant shadow-sm"
                         id="youtube-url"
                         placeholder="https://www.youtube.com/watch?v=... or youtu.be/dQw4w9WgXcQ"
                         type="url"
@@ -341,7 +363,7 @@ export default function Dashboard() {
                   {showTranscript && (
                     <div className="px-space-md pb-space-md pt-space-xs">
                       <textarea
-                        className="w-full p-space-sm rounded bg-surface-container-lowest font-label-sm text-label-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none shadow-inner resize-y"
+                        className="w-full p-space-sm rounded bg-surface-container-lowest font-label-sm text-label-sm text-on-surface placeholder:text-on-surface-variant shadow-inner resize-y"
                         placeholder="Paste timestamps and spoken text here (e.g. 00:00:15 Look, here is the secret to scaling customer acquisition...)"
                         rows={3}
                         value={ytTranscript}
@@ -396,7 +418,7 @@ export default function Dashboard() {
                             <img
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                               src={card.art}
-                              alt=""
+                              alt={card.title}
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-inverse-surface/80 via-transparent to-transparent" />
                             <div className="absolute top-2 left-2">
@@ -447,6 +469,7 @@ export default function Dashboard() {
                 <div className="flex flex-col gap-space-md">
                   <label className="relative group cursor-pointer p-space-xl rounded-xl bg-surface-container-low hover:bg-surface-container transition-all flex flex-col items-center justify-center text-center">
                     <input
+                      ref={fileInputRef}
                       accept="video/mp4,video/quicktime,video/webm,video/x-matroska"
                       className="absolute inset-0 opacity-0 cursor-pointer z-10"
                       type="file"
@@ -459,7 +482,7 @@ export default function Dashboard() {
                       {file ? file.name : "Drop or select long-form video"}
                     </h3>
                     <p className="font-body-md text-body-md text-on-surface-variant max-w-sm mb-space-md">
-                      Supports MP4, MOV, WebM, MKV, M4V up to {settings ? "the configured limit" : "4GB"}. Processed locally with FFmpeg.
+                      Supports MP4, MOV, WebM, MKV, M4V up to 4GB. Processed locally with FFmpeg.
                     </p>
                     <div className="flex items-center gap-space-sm">
                       <span className="px-space-md py-2 rounded-lg bg-primary-container text-on-primary-container font-body-sm text-body-sm font-semibold shadow-sm">
@@ -473,7 +496,7 @@ export default function Dashboard() {
                     <div className="flex flex-col gap-1.5">
                       <label className="font-body-sm text-body-sm font-medium text-on-surface">Project Title (Optional)</label>
                       <input
-                        className="px-space-md py-2.5 rounded bg-surface-container-low text-on-surface font-body-sm text-body-sm focus:outline-none"
+                        className="px-space-md py-2.5 rounded bg-surface-container-low text-on-surface font-body-sm text-body-sm"
                         placeholder="e.g. Masterclass Q3 Keynote Recording"
                         type="text"
                         value={projectTitle}
@@ -483,7 +506,7 @@ export default function Dashboard() {
                     <div className="flex flex-col gap-1.5">
                       <label className="font-body-sm text-body-sm font-medium text-on-surface">Subtitle Source</label>
                       <select
-                        className="px-space-md py-2.5 rounded bg-surface-container-low text-on-surface font-body-sm text-body-sm focus:outline-none"
+                        className="px-space-md py-2.5 rounded bg-surface-container-low text-on-surface font-body-sm text-body-sm"
                         value={subtitleSource}
                         onChange={(e) => setSubtitleSource(e.target.value)}
                       >
@@ -536,7 +559,7 @@ export default function Dashboard() {
                       className="bg-surface-container-low p-space-sm rounded-lg flex flex-col gap-2 hover:bg-surface-container transition-all cursor-pointer text-left disabled:opacity-60"
                     >
                       <div className="h-28 rounded bg-surface-dim overflow-hidden relative">
-                        <img className="w-full h-full object-cover" src={tile.art} alt="" />
+                        <img className="w-full h-full object-cover" src={tile.art} alt={tile.title} />
                         <span className="absolute bottom-1 right-1 font-label-sm text-[9px] bg-inverse-surface/80 text-inverse-on-surface px-1 rounded">
                           {tile.tag}
                         </span>
@@ -559,7 +582,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-space-sm">
               <h2 className="font-headline-md text-headline-md text-on-surface font-semibold">Recent Studio Projects</h2>
               <span className="px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface font-label-sm text-label-sm font-semibold">
-                {projects.length + analyzing} active
+                {projects.filter((pr) => !pr.archived).length} active
               </span>
             </div>
             <div className="flex items-center gap-space-xs">

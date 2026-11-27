@@ -309,6 +309,7 @@ class SettingsUpdate(BaseModel):
     transcription_provider: Optional[str] = None
     transcription_api_key: Optional[str] = Field(default=None, max_length=4096)
     enable_local_whisper: Optional[bool] = None
+    use_cuda: Optional[bool] = None
     whisper_model: Optional[str] = None
     max_clips: Optional[int] = None
     openai_api_key: Optional[str] = None
@@ -393,6 +394,7 @@ def get_settings():
         "has_transcription_api_key": bool(trans_key),
         "transcription_api_key_preview": _mask_key(trans_key),
         "enable_local_whisper": s.enable_local_whisper,
+        "use_cuda": s.use_cuda,
         "whisper_model": s.whisper_model,
         "max_clips": s.max_clips,
         "has_openai_key": bool(s.openai_api_key),
@@ -423,6 +425,8 @@ def update_settings(payload: SettingsUpdate):
         s.transcription_api_key = payload.transcription_api_key.strip()
     if payload.enable_local_whisper is not None:
         s.enable_local_whisper = payload.enable_local_whisper
+    if payload.use_cuda is not None:
+        s.use_cuda = payload.use_cuda
     if payload.whisper_model in ("tiny", "base", "small", "medium"):
         s.whisper_model = payload.whisper_model  # type: ignore
     if payload.max_clips is not None:
@@ -1234,6 +1238,50 @@ def api_export_all(project_id: str):
             logger.exception("Could not start export-all worker for project %s", project_id)
             raise HTTPException(status_code=500, detail="Could not start the export queue.") from exc
     return response
+
+
+@app.post("/api/purge-exports")
+def api_purge_exports():
+    """Delete rendered export files (the render cache) and reset their clips to idle.
+
+    Source media, transcripts, and clips are kept; every clip can be re-exported.
+    """
+    freed = 0
+    purged = 0
+    orphans = 0
+    with _store_lock:
+        with _EXPORT_LOCK:
+            if _ACTIVE_EXPORTS:
+                raise HTTPException(status_code=409, detail="Wait for active exports to finish before purging the render cache.")
+        referenced = set()
+        for proj in list_projects():
+            changed = False
+            for clip in proj.clips:
+                if clip.export_filename:
+                    referenced.add(Path(clip.export_filename).name)
+                if clip.export_status in {"done", "error"}:
+                    if clip.export_filename:
+                        path = (EXPORTS_DIR / clip.export_filename).resolve()
+                        if path.is_relative_to(EXPORTS_DIR.resolve()) and path.is_file():
+                            freed += path.stat().st_size
+                            path.unlink(missing_ok=True)
+                    clip.export_status = "idle"
+                    clip.export_progress = 0
+                    clip.export_error = None
+                    clip.export_filename = None
+                    clip.export_url = None
+                    clip.exported_at = None
+                    purged += 1
+                    changed = True
+            if changed:
+                save_project(proj)
+        if EXPORTS_DIR.is_dir():
+            for path in EXPORTS_DIR.iterdir():
+                if path.is_file() and path.name not in referenced:
+                    freed += path.stat().st_size
+                    path.unlink(missing_ok=True)
+                    orphans += 1
+    return {"purged_clips": purged, "orphan_files": orphans, "freed_bytes": freed}
 
 
 @app.get("/api/projects/{project_id}/download-bundle")
