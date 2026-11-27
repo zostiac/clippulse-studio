@@ -536,4 +536,93 @@ with tempfile.TemporaryDirectory() as atomic_td:
     assert not list(Path(atomic_td).glob("*.tmp"))
 print("atomic write WinError 5 retry OK")
 
+# --- export render parity: layouts honour the split-screen crop anchors ------
+# Renders each layout through the real FFmpeg pipeline from a two-tone source
+# (left half red, right half blue) and checks the panes land where the crop
+# anchors say — locking "the export matches the editor preview".
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+
+from exporter import export_clip_mp4  # noqa: E402
+from models import EXPORTS_DIR  # noqa: E402
+
+_ff = shutil.which("ffmpeg")
+_ffprobe = shutil.which("ffprobe")
+if _ff and _ffprobe:
+    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as render_td:
+        src = Path(render_td) / "twotone.mp4"
+        subprocess.run(
+            [
+                _ff, "-hide_banner", "-loglevel", "error", "-y",
+                "-f", "lavfi", "-i", "color=c=red:s=1280x720:d=2:r=24",
+                "-f", "lavfi", "-i", "color=c=blue:s=1280x720:d=2:r=24",
+                "-filter_complex", "[0:v][1:v]hstack=inputs=2,format=yuv420p[v]",
+                "-map", "[v]", "-t", "2", str(src),
+            ],
+            check=True,
+        )
+
+        def _probe_size(path):
+            out = subprocess.run(
+                [_ffprobe, "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "stream=width,height", "-of", "csv=p=0", str(path)],
+                check=True, capture_output=True, text=True,
+            ).stdout.strip()
+            return tuple(int(v) for v in out.split(","))
+
+        def _pixel(path, x, y):
+            raw = subprocess.run(
+                [_ff, "-hide_banner", "-loglevel", "error", "-i", str(path),
+                 "-ss", "0.5", "-vf", f"format=rgb24,crop=1:1:{x}:{y}", "-frames:v", "1",
+                 "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                check=True, capture_output=True,
+            ).stdout
+            return raw[0], raw[1], raw[2]
+
+        def _mk_clip(layout, **style_kw):
+            return Clip(
+                id="clip_deadbeef",
+                project_id="proj_deadbeef",
+                title="render parity",
+                start=0.0,
+                end=2.0,
+                style=ClipStyle(layout=layout, **style_kw),
+            )
+
+        # split_screen with hard-anchored panes: top = left (red), bottom = right (blue)
+        split_out = export_clip_mp4(
+            _mk_clip("split_screen", split_top_x=0.0, split_bottom_x=1.0), src, 2560, 720, []
+        )
+        assert _probe_size(split_out) == (1080, 1920), _probe_size(split_out)
+        r, g, b = _pixel(split_out, 540, 300)
+        assert r > 150 and b < 110, f"top pane should show the red (left) region, got {(r, g, b)}"
+        r, g, b = _pixel(split_out, 540, 1600)
+        assert b > 150 and r < 110, f"bottom pane should show the blue (right) region, got {(r, g, b)}"
+        split_out.unlink(missing_ok=True)
+        (EXPORTS_DIR / "proj_deadbeef_clip_deadbeef.ass").unlink(missing_ok=True)
+        print("split_screen crop anchor parity OK")
+
+        # center_crop with pan_x = -1 keeps the red (left) region in frame
+        crop_out = export_clip_mp4(_mk_clip("center_crop", pan_x=-1.0), src, 2560, 720, [])
+        assert _probe_size(crop_out) == (1080, 1920)
+        r, g, b = _pixel(crop_out, 540, 960)
+        assert r > 150 and b < 110, f"panned crop should stay on the red region, got {(r, g, b)}"
+        crop_out.unlink(missing_ok=True)
+        (EXPORTS_DIR / "proj_deadbeef_clip_deadbeef.ass").unlink(missing_ok=True)
+        print("center_crop pan anchor parity OK")
+
+        # blur_fill blurs the full source as backdrop (left stays reddish, right bluish)
+        blur_out = export_clip_mp4(_mk_clip("blur_fill"), src, 2560, 720, [])
+        assert _probe_size(blur_out) == (1080, 1920)
+        r, g, b = _pixel(blur_out, 40, 40)
+        assert r > g + 40 and r > b + 40, f"blur backdrop left edge should stay red, got {(r, g, b)}"
+        r, g, b = _pixel(blur_out, 1040, 1880)
+        assert b > r + 40 and b > g + 40, f"blur backdrop right edge should stay blue, got {(r, g, b)}"
+        blur_out.unlink(missing_ok=True)
+        (EXPORTS_DIR / "proj_deadbeef_clip_deadbeef.ass").unlink(missing_ok=True)
+        print("blur_fill backdrop parity OK")
+else:
+    print("ffmpeg/ffprobe not found — skipped export render parity checks")
+
 print("ALL SMOKE TESTS PASSED")

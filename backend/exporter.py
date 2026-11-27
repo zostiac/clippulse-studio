@@ -347,26 +347,36 @@ def export_clip_mp4(
         )
     elif layout == "split_screen":
         half_h = out_h // 2
-        if src_w / max(1, src_h) > 1.15:
-            crop_w = int(round(src_w * 0.56))
-            crop_w -= crop_w % 2
-            x_left = 0
-            x_right = max(0, src_w - crop_w)
-            filter_graph = (
-                f"[0:v]split=2[top_in][bot_in];"
-                f"[top_in]crop={crop_w}:{src_h}:{x_left}:0,"
-                f"scale={out_w}:{half_h}:force_original_aspect_ratio=increase,crop={out_w}:{half_h}[top];"
-                f"[bot_in]crop={crop_w}:{src_h}:{x_right}:0,"
-                f"scale={out_w}:{half_h}:force_original_aspect_ratio=increase,crop={out_w}:{half_h}[bot];"
-                f"[top][bot]vstack=inputs=2,drawbox=x=0:y={half_h-2}:w={out_w}:h=4:color=0x0A0B0F:t=fill[vbase]"
+        half_h -= half_h % 2
+        target_ratio = out_w / max(1, half_h)
+        src_ratio = src_w / max(1, src_h)
+
+        def _pane_filter(in_label: str, out_label: str, ax: float, ay: float) -> str:
+            # Cover-window crop anchored at (ax, ay) — matches the object-cover
+            # crop placement the editor preview shows for each pane.
+            if src_ratio >= target_ratio:
+                crop_h = src_h - (src_h % 2)
+                crop_w = int(round(crop_h * target_ratio))
+            else:
+                crop_w = src_w - (src_w % 2)
+                crop_h = int(round(crop_w / target_ratio))
+            crop_w = max(2, min(crop_w, src_w - (src_w % 2)))
+            crop_h = max(2, min(crop_h, src_h - (src_h % 2)))
+            crop_x = int(round(max(0.0, min(1.0, ax)) * (src_w - crop_w)))
+            crop_y = int(round(max(0.0, min(1.0, ay)) * (src_h - crop_h)))
+            return (
+                f"[{in_label}]crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
+                f"scale={out_w}:{half_h}:force_original_aspect_ratio=increase,"
+                f"crop={out_w}:{half_h}[{out_label}]"
             )
-        else:
-            filter_graph = (
-                f"[0:v]split=2[top_in][bot_in];"
-                f"[top_in]scale={out_w}:{half_h}:force_original_aspect_ratio=increase,crop={out_w}:{half_h}[top];"
-                f"[bot_in]scale={out_w}:{half_h}:force_original_aspect_ratio=increase,crop={out_w}:{half_h}[bot];"
-                f"[top][bot]vstack=inputs=2[vbase]"
-            )
+
+        top_f = _pane_filter("top_in", "top", clip.style.split_top_x, clip.style.split_top_y)
+        bot_f = _pane_filter("bot_in", "bot", clip.style.split_bottom_x, clip.style.split_bottom_y)
+        filter_graph = (
+            f"[0:v]split=2[top_in][bot_in];"
+            f"{top_f};{bot_f};"
+            f"[top][bot]vstack=inputs=2,drawbox=x=0:y={half_h - 2}:w={out_w}:h=4:color=0x0A0B0F:t=fill[vbase]"
+        )
     else:
         target_ratio = 9.0 / 16.0
         src_ratio = src_w / max(1, src_h)

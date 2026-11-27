@@ -71,6 +71,12 @@ class TranscriptSegment(BaseModel):
 class ClipStyle(BaseModel):
     layout: Literal["center_crop", "blur_fill", "split_screen"] = "center_crop"
     pan_x: float = Field(default=0.0, ge=-1.0, le=1.0)
+    # Split-screen crop anchors (0..1) — where each pane's crop window sits on
+    # the source. Defaults stack the top pane over the bottom pane.
+    split_top_x: float = Field(default=0.5, ge=0.0, le=1.0)
+    split_top_y: float = Field(default=0.25, ge=0.0, le=1.0)
+    split_bottom_x: float = Field(default=0.5, ge=0.0, le=1.0)
+    split_bottom_y: float = Field(default=0.75, ge=0.0, le=1.0)
     caption_style: Literal["hormozi", "beast", "minimal", "neon", "off"] = "hormozi"
     caption_position: Literal["top", "middle", "bottom"] = "bottom"
     font_size: int = Field(default=58, ge=24, le=100)
@@ -176,7 +182,8 @@ class AppSettings(BaseModel):
     enable_local_whisper: bool = True
     use_cuda: bool = True
     whisper_model: Literal["tiny", "base", "small", "medium"] = "small"
-    max_clips: int = Field(default=6, ge=1, le=15)
+    # 0 = Auto: the analyzer scales the clip count with the video length.
+    max_clips: int = Field(default=0, ge=0, le=15)
     # Legacy alias support
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
