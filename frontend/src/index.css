@@ -1,4 +1,35 @@
 @import "tailwindcss";
+@import "@fontsource/playfair-display/index.css";
+@import "@fontsource/plus-jakarta-sans/index.css";
+@import "@fontsource/jetbrains-mono/index.css";
+
+@theme {
+  --font-display: "Playfair Display", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  --color-surface: #faf8ff;
+  --color-surface-dim: #d2d9f4;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f2f3ff;
+  --color-surface-container: #eaedff;
+  --color-surface-container-high: #e2e7ff;
+  --color-surface-container-highest: #dae2fd;
+  --color-on-surface: #131b2e;
+  --color-on-surface-variant: #564338;
+  --color-outline: #897267;
+  --color-outline-variant: #ddc1b3;
+  --color-primary: #903f00;
+  --color-primary-container: #b45309;
+  --color-on-primary-container: #fff1eb;
+  --color-secondary: #4b41e1;
+  --color-tertiary-container: #007d73;
+  --color-tertiary-fixed: #89f5e7;
+  --color-on-tertiary-fixed: #00201d;
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+}
 
 @theme {
   /* ---- Studio Editorial Light · material palette (dashboard / editor / settings) ---- */
