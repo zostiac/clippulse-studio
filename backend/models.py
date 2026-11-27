@@ -28,7 +28,7 @@ def _positive_env_int(name: str, default: int, maximum: int) -> int:
     return max(1, min(value, maximum))
 
 
-MAX_UPLOAD_MB = _positive_env_int("CLIPPULSE_MAX_UPLOAD_MB", 1024, 4096)
+MAX_UPLOAD_MB = _positive_env_int("CLIPPULSE_MAX_UPLOAD_MB", 4096, 4096)
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 MAX_SUBTITLE_MB = _positive_env_int("CLIPPULSE_MAX_SUBTITLE_MB", 5, 25)
 MAX_SUBTITLE_BYTES = MAX_SUBTITLE_MB * 1024 * 1024
@@ -166,14 +166,14 @@ TranscriptionProvider = Literal["auto", "groq", "openai", "local"]
 
 
 class AppSettings(BaseModel):
-    ai_provider: AIProvider = "local_free"
+    ai_provider: AIProvider = "groq"
     api_key: str = ""
     ai_model: str = ""
     transcription_provider: TranscriptionProvider = "auto"
     transcription_api_key: str = ""
     enable_local_whisper: bool = True
     use_cuda: bool = True
-    whisper_model: Literal["tiny", "base", "small", "medium"] = "tiny"
+    whisper_model: Literal["tiny", "base", "small", "medium"] = "small"
     max_clips: int = Field(default=6, ge=1, le=15)
     # Legacy alias support
     openai_api_key: str = ""

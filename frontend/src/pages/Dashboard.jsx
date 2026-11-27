@@ -213,10 +213,19 @@ export default function Dashboard() {
     uploadVideo(fd);
   };
 
-  const aiLabel =
-    settings?.ai_provider === "local_free"
-      ? `Whisper ${(settings?.whisper_model || "tiny").toUpperCase()} + Heuristic Scorer`
-      : `${settings?.ai_provider?.toUpperCase()} + Whisper Base`;
+  // The label must reflect the engine that will actually run: cloud providers
+  // only engage when an API key is saved, otherwise everything stays local.
+  const hasKey = Boolean(settings?.api_key_preview);
+  const cloud = settings?.ai_provider && settings.ai_provider !== "local_free" && hasKey;
+  const aiLabel = !cloud
+    ? `Whisper ${(settings?.whisper_model || "small").toUpperCase()} + Heuristic Scorer`
+    : settings.ai_provider === "groq"
+      ? "Groq Large v3 + Llama 3.3"
+      : settings.ai_provider === "openai"
+        ? "Whisper-1 + GPT-4o-mini"
+        : settings.ai_provider === "gemini"
+          ? "Gemini 1.5 Flash + Local Whisper"
+          : "Mistral / DeepSeek + Local Whisper";
 
   return (
     <div className="flex flex-col w-full">
@@ -306,7 +315,7 @@ export default function Dashboard() {
                 <div className="flex flex-col gap-space-xs">
                   <label className="font-body-md text-body-md font-medium text-on-surface flex items-center justify-between" htmlFor="youtube-url">
                     <span>Paste a YouTube video, podcast, or livestream URL</span>
-                    <span className="font-label-sm text-label-sm text-on-surface-variant">Max length: 3h 30m</span>
+                    <span className="font-label-sm text-label-sm text-on-surface-variant">Max file size: 4 GB</span>
                   </label>
                   <div className="relative flex flex-col sm:flex-row items-stretch gap-space-xs bg-surface-container-low p-1.5 rounded-lg shadow-inner">
                     <div className="relative flex-1 flex items-center">
