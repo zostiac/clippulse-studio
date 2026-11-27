@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { useStudio, routeTo } from "../../studio.jsx";
 
 const AI_PILL = {
+  hybrid: "Groq + Gemini Hybrid",
   local_free: "Local Whisper AI",
   groq: "Groq Free AI",
   gemini: "Gemini Free AI",
@@ -13,7 +14,7 @@ export default function TopHeader({ variant = "material", onMenu }) {
   const { navigate, route, settings, search, setSearch, exportAll, busy } = useStudio();
   // Cloud providers only engage when an API key is saved — without one the
   // engine runs fully local, and the pill should say so.
-  const hasKey = Boolean(settings?.api_key_preview);
+  const hasKey = Boolean(settings?.api_key_preview || settings?.has_groq_key || settings?.has_gemini_key);
   const effProvider = settings?.ai_provider && settings.ai_provider !== "local_free" && hasKey ? settings.ai_provider : "local_free";
   const aiLabel = AI_PILL[effProvider] || "Local Whisper AI";
   const searchRef = useRef(null);

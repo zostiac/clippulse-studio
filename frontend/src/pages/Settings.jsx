@@ -3,6 +3,17 @@ import { useStudio } from "../studio.jsx";
 
 const PROVIDERS = [
   {
+    value: "hybrid",
+    icon: "sync_alt",
+    title: "Hybrid — Both at Once",
+    badge: "Recommended",
+    badgeClass: "bg-primary-container text-on-primary-container",
+    desc: "Both engines run together: Groq transcribes the audio (fastest free Whisper) while Gemini picks the viral clips and writes titles, hooks & metadata.",
+    meta: "Groq Whisper + Gemini Flash",
+    metaStrong: "BEST OF BOTH",
+    span: true,
+  },
+  {
     value: "local_free",
     icon: "memory",
     title: "100% Free Local AI",
@@ -69,8 +80,10 @@ const SECTIONS = [
 export default function Settings() {
   const { settings, health, saveSettings, saveCookies, clearCookies, toast } = useStudio();
   const [section, setSection] = useState("engine");
-  const [provider, setProvider] = useState(settings?.ai_provider || "groq");
+  const [provider, setProvider] = useState(settings?.ai_provider || "hybrid");
   const [apiKey, setApiKey] = useState("");
+  const [groqKey, setGroqKey] = useState("");
+  const [geminiKey, setGeminiKey] = useState("");
   const [aiModel, setAiModel] = useState(settings?.ai_model || "");
   const [whisperModel, setWhisperModel] = useState(settings?.whisper_model || "small");
   const [cuda, setCuda] = useState(true);
@@ -145,8 +158,10 @@ export default function Settings() {
     setLayout("center_crop");
     setMaxClips(6);
     saveSettings({
-      ai_provider: "groq",
+      ai_provider: "hybrid",
       api_key: "",
+      groq_api_key: "",
+      gemini_api_key: "",
       ai_model: "",
       whisper_model: "small",
       transcription_provider: "auto",
@@ -246,13 +261,17 @@ export default function Settings() {
                 <div>
                   <h2 className="font-headline-sm text-headline-sm text-on-surface">Speech-to-Text &amp; Reasoning Core</h2>
                   <p className="font-body-sm text-body-sm text-on-surface-variant">
-                    Choose your primary LLM and transcription backend for viral hook discovery.
+                    Run both engines together — Groq transcribes, Gemini reasons — or pin a single backend.
                   </p>
                 </div>
               </div>
               <span className="px-space-sm py-1 rounded bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm font-semibold flex items-center gap-space-xs">
                 <span className="w-1.5 h-1.5 rounded-full bg-tertiary-container" />
-                {provider === "local_free" || !settings?.api_key_preview ? "Free Mode Active" : "Cloud Mode"}
+                {provider === "hybrid" && (settings?.has_groq_key || settings?.has_gemini_key)
+                  ? "Hybrid Mode Active"
+                  : provider === "local_free" || !(settings?.api_key_preview || settings?.has_groq_key || settings?.has_gemini_key)
+                    ? "Free Mode Active"
+                    : "Cloud Mode"}
               </span>
             </div>
 
@@ -304,7 +323,50 @@ export default function Settings() {
               })}
             </div>
 
-            {provider !== "local_free" && (
+            {provider === "hybrid" && (
+              <div className="mt-space-sm p-space-md rounded-xl bg-surface-container-low flex flex-col gap-space-xs">
+                <label className="font-label-sm text-label-sm font-medium text-on-surface-variant uppercase">
+                  Both Engine Keys — Transcribe + Reason
+                </label>
+                <div className="flex items-center gap-space-sm">
+                  <input
+                    type="password"
+                    className="flex-1 px-space-md py-2 rounded-lg bg-surface-container-lowest font-label-md text-label-md text-on-surface shadow-sm"
+                    placeholder={
+                      settings?.has_groq_key ? `Groq saved: ${settings.groq_api_key_preview}` : "Groq API key (transcription — console.groq.com)"
+                    }
+                    value={groqKey}
+                    onChange={(e) => setGroqKey(e.target.value)}
+                  />
+                  <input
+                    type="password"
+                    className="flex-1 px-space-md py-2 rounded-lg bg-surface-container-lowest font-label-md text-label-md text-on-surface shadow-sm"
+                    placeholder={
+                      settings?.has_gemini_key ? `Gemini saved: ${settings.gemini_api_key_preview}` : "Gemini API key (clip intelligence — aistudio.google.com)"
+                    }
+                    value={geminiKey}
+                    onChange={(e) => setGeminiKey(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      saveSettings({
+                        ...(groqKey ? { groq_api_key: groqKey } : {}),
+                        ...(geminiKey ? { gemini_api_key: geminiKey } : {}),
+                      })
+                    }
+                    className="px-space-md py-2 rounded-lg bg-primary-container text-on-primary-container font-body-sm text-body-sm font-semibold hover:bg-primary transition-colors"
+                  >
+                    Save Keys
+                  </button>
+                </div>
+                <p className="font-body-sm text-[11px] text-on-surface-variant">
+                  Either key alone still works — missing jobs fall back to the free local engine.
+                </p>
+              </div>
+            )}
+
+            {provider !== "local_free" && provider !== "hybrid" && (
               <div className="mt-space-sm p-space-md rounded-xl bg-surface-container-low flex flex-col gap-space-xs">
                 <label className="font-label-sm text-label-sm font-medium text-on-surface-variant uppercase">
                   {provider.toUpperCase()} API Key
@@ -313,7 +375,11 @@ export default function Settings() {
                   <input
                     type="password"
                     className="flex-1 px-space-md py-2 rounded-lg bg-surface-container-lowest font-label-md text-label-md text-on-surface shadow-sm"
-                    placeholder={settings?.api_key_preview ? `Saved: ${settings.api_key_preview}` : "Paste your API key"}
+                    placeholder={
+                      (provider === "groq" ? settings?.groq_api_key_preview : provider === "gemini" ? settings?.gemini_api_key_preview : settings?.api_key_preview)
+                        ? `Saved: ${provider === "groq" ? settings.groq_api_key_preview : provider === "gemini" ? settings.gemini_api_key_preview : settings.api_key_preview}`
+                        : "Paste your API key"
+                    }
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                   />

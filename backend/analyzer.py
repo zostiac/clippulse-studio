@@ -493,6 +493,42 @@ def _parse_llm_clips_json(
     return None
 
 
+def _llm_candidates(settings: AppSettings) -> List[Tuple[str, str]]:
+    """(provider, api_key) pairs to try for clip intelligence, best first.
+
+    In hybrid mode both engines are live at once: Gemini scores clips and
+    writes metadata (its strength) and Groq is the fast fallback.
+    """
+    groq_key = (getattr(settings, "groq_api_key", "") or "").strip()
+    gemini_key = (getattr(settings, "gemini_api_key", "") or "").strip()
+    openai_key = (getattr(settings, "openai_api_key", "") or "").strip()
+    generic_key = (getattr(settings, "api_key", "") or "").strip()
+    provider = settings.ai_provider
+    if provider == "local_free":
+        return []
+    if provider == "hybrid":
+        ordered: List[Tuple[str, str]] = []
+        if gemini_key:
+            ordered.append(("gemini", gemini_key))
+        if groq_key:
+            ordered.append(("groq", groq_key))
+        if openai_key:
+            ordered.append(("openai", openai_key))
+        if not ordered and generic_key:
+            ordered.append(("groq", generic_key))
+        return ordered
+    key = ""
+    if provider == "gemini":
+        key = gemini_key or generic_key
+    elif provider == "groq":
+        key = groq_key or generic_key
+    elif provider == "openai":
+        key = openai_key or generic_key
+    else:  # openrouter
+        key = generic_key or openai_key
+    return [(provider, key)] if key else []
+
+
 def detect_clips_with_llm(
     project_id: str,
     title: str,
@@ -500,9 +536,8 @@ def detect_clips_with_llm(
     transcript: List[TranscriptSegment],
     settings: AppSettings,
 ) -> Optional[List[Clip]]:
-    api_key = (settings.api_key or settings.openai_api_key or "").strip()
-    provider = settings.ai_provider
-    if provider == "local_free" or not api_key or not transcript:
+    candidates = _llm_candidates(settings)
+    if not candidates or not transcript:
         return None
 
     lines = [f"[{s.start:.1f}-{s.end:.1f}] {s.text}" for s in transcript[:180]]
@@ -533,55 +568,62 @@ Rules:
 Transcript:
 {transcript_block}"""
 
-    try:
-        if provider == "gemini":
-            model = settings.ai_model or PROVIDER_DEFAULTS["gemini"]["default_model"]
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-            resp = httpx.post(
-                url,
-                params={"key": api_key},
-                json={
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "temperature": 0.4,
-                        "responseMimeType": "application/json",
+    for provider, api_key in candidates:
+        try:
+            if provider == "gemini":
+                model = settings.ai_model or PROVIDER_DEFAULTS["gemini"]["default_model"]
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+                resp = httpx.post(
+                    url,
+                    params={"key": api_key},
+                    json={
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {
+                            "temperature": 0.4,
+                            "responseMimeType": "application/json",
+                        },
                     },
-                },
-                timeout=45.0,
-            )
+                    timeout=45.0,
+                )
+                resp.raise_for_status()
+                raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+                parsed = _parse_llm_clips_json(raw, project_id, duration, settings)
+                if parsed:
+                    return parsed
+                continue
+
+            cfg = PROVIDER_DEFAULTS.get(provider)
+            if not cfg:
+                continue
+            model = settings.ai_model or cfg["default_model"]
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            if provider == "openrouter":
+                headers["HTTP-Referer"] = "https://clippulse.studio"
+                headers["X-Title"] = "ClipPulse Studio"
+
+            body: dict = {
+                "model": model,
+                "temperature": 0.4,
+                "messages": [
+                    {"role": "system", "content": "Return only valid JSON."},
+                    {"role": "user", "content": prompt},
+                ],
+            }
+            if provider in ("openai", "groq"):
+                body["response_format"] = {"type": "json_object"}
+
+            resp = httpx.post(cfg["chat_url"], headers=headers, json=body, timeout=45.0)
             resp.raise_for_status()
-            raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-            return _parse_llm_clips_json(raw, project_id, duration, settings)
-
-        cfg = PROVIDER_DEFAULTS.get(provider)
-        if not cfg:
-            return None
-        model = settings.ai_model or cfg["default_model"]
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        if provider == "openrouter":
-            headers["HTTP-Referer"] = "https://clippulse.studio"
-            headers["X-Title"] = "ClipPulse Studio"
-
-        body: dict = {
-            "model": model,
-            "temperature": 0.4,
-            "messages": [
-                {"role": "system", "content": "Return only valid JSON."},
-                {"role": "user", "content": prompt},
-            ],
-        }
-        if provider in ("openai", "groq"):
-            body["response_format"] = {"type": "json_object"}
-
-        resp = httpx.post(cfg["chat_url"], headers=headers, json=body, timeout=45.0)
-        resp.raise_for_status()
-        raw = resp.json()["choices"][0]["message"]["content"]
-        return _parse_llm_clips_json(raw, project_id, duration, settings)
-    except Exception:
-        return None
+            raw = resp.json()["choices"][0]["message"]["content"]
+            parsed = _parse_llm_clips_json(raw, project_id, duration, settings)
+            if parsed:
+                return parsed
+        except Exception:
+            continue
+    return None
 
 
 def detect_clips_heuristic(
@@ -727,11 +769,19 @@ def analyze_project(
         if settings.transcription_provider in ("groq", "openai"):
             cloud_whisper_provider = settings.transcription_provider
             cloud_whisper_key = (settings.transcription_api_key or "").strip()
-            if not cloud_whisper_key and settings.ai_provider == cloud_whisper_provider:
-                cloud_whisper_key = api_key
-        elif settings.transcription_provider == "auto" and api_key and settings.ai_provider in ("groq", "openai"):
-            cloud_whisper_provider = settings.ai_provider
-            cloud_whisper_key = api_key
+            if not cloud_whisper_key:
+                for cand_provider, cand_key in _llm_candidates(settings):
+                    if cand_provider == cloud_whisper_provider:
+                        cloud_whisper_key = cand_key
+                        break
+        elif settings.transcription_provider == "auto":
+            # Auto picks the fastest connected engine for speech-to-text:
+            # Groq Whisper first, then OpenAI Whisper, then local.
+            for cand_provider, cand_key in _llm_candidates(settings):
+                if cand_provider in ("groq", "openai"):
+                    cloud_whisper_provider = cand_provider
+                    cloud_whisper_key = cand_key
+                    break
 
         if cloud_whisper_provider and cloud_whisper_key:
             attempted = True
@@ -770,12 +820,15 @@ def analyze_project(
         if transcript and failures:
             warnings.extend(failures)
 
-    # 2. LLM viral clip scoring (if free-tier or OpenAI key configured), else Local Heuristic
+    # 2. LLM viral clip scoring (connected engines try in order), else Local Heuristic
     clips: Optional[List[Clip]] = None
-    if api_key and settings.ai_provider != "local_free" and transcript:
+    if _llm_candidates(settings) and transcript:
         clips = detect_clips_with_llm(project_id, title, duration, transcript, settings)
         if clips:
-            engine_used = f"{settings.ai_provider}_free" if settings.ai_provider in ("groq", "gemini", "openrouter") else settings.ai_provider
+            if settings.ai_provider == "hybrid":
+                engine_used = "hybrid_free"
+            else:
+                engine_used = f"{settings.ai_provider}_free" if settings.ai_provider in ("groq", "gemini", "openrouter") else settings.ai_provider
         else:
             warnings.append(
                 f"{settings.ai_provider} clip scoring was unavailable; local heuristic scoring was used."

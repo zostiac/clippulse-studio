@@ -311,6 +311,8 @@ class CookiesRequest(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
+    groq_api_key: Optional[str] = None
+    gemini_api_key: Optional[str] = None
     ai_provider: Optional[str] = None
     api_key: Optional[str] = Field(default=None, max_length=4096)
     ai_model: Optional[str] = Field(default=None, max_length=200)
@@ -397,6 +399,10 @@ def get_settings():
         "ai_provider": s.ai_provider,
         "has_api_key": bool(active_key),
         "api_key_preview": _mask_key(active_key),
+        "has_groq_key": bool(s.groq_api_key),
+        "groq_api_key_preview": _mask_key(s.groq_api_key),
+        "has_gemini_key": bool(s.gemini_api_key),
+        "gemini_api_key_preview": _mask_key(s.gemini_api_key),
         "ai_model": s.ai_model,
         "transcription_provider": s.transcription_provider,
         "has_transcription_api_key": bool(trans_key),
@@ -415,11 +421,19 @@ def get_settings():
 @app.put("/api/settings")
 def update_settings(payload: SettingsUpdate):
     s = load_settings()
-    if payload.ai_provider in ("local_free", "groq", "gemini", "openrouter", "openai"):
+    if payload.ai_provider in ("hybrid", "local_free", "groq", "gemini", "openrouter", "openai"):
         s.ai_provider = payload.ai_provider  # type: ignore
+    if payload.groq_api_key is not None:
+        s.groq_api_key = payload.groq_api_key.strip()
+    if payload.gemini_api_key is not None:
+        s.gemini_api_key = payload.gemini_api_key.strip()
     if payload.api_key is not None:
         s.api_key = payload.api_key.strip()
         s.openai_api_key = payload.api_key.strip()
+        if s.ai_provider == "groq":
+            s.groq_api_key = s.api_key
+        elif s.ai_provider == "gemini":
+            s.gemini_api_key = s.api_key
     elif payload.openai_api_key is not None:
         s.api_key = payload.openai_api_key.strip()
         s.openai_api_key = payload.openai_api_key.strip()
@@ -1089,6 +1103,51 @@ def api_update_clip(project_id: str, clip_id: str, payload: UpdateClipRequest):
                     if old_path.is_relative_to(EXPORTS_DIR.resolve()) and old_path.is_file():
                         old_path.unlink(missing_ok=True)
 
+        save_project(proj)
+        return target.model_dump()
+
+
+@app.post("/api/projects/{project_id}/clips/{clip_id}/face-track")
+def api_face_track_clip(project_id: str, clip_id: str):
+    """Detect face positions across the clip and cache them on the clip style.
+
+    The cached keyframes drive both the live preview pan and the export crop,
+    so Auto AI reframing looks identical before and after rendering.
+    """
+    from exporter import _detect_face_keyframes
+
+    with _store_lock:
+        proj = load_project(project_id)
+        if not proj:
+            raise HTTPException(status_code=404, detail="Project not found")
+        target = next((item for item in proj.clips if item.id == clip_id), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="Clip not found")
+        video_path = Path(proj.video_path)
+        if not video_path.is_file():
+            raise HTTPException(status_code=400, detail="Source video file is missing.")
+        try:
+            _duration, src_w, src_h = probe_video(video_path)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Could not probe the source video.")
+        target_ratio = 9.0 / 16.0
+        src_ratio = src_w / max(1, src_h)
+        if src_ratio > target_ratio:
+            crop_h = src_h - (src_h % 2)
+            crop_w = int(round(crop_h * target_ratio))
+            crop_w -= crop_w % 2
+        else:
+            crop_w = 0
+        if crop_w <= 0:
+            # Portrait source: the full frame already fits, nothing to follow.
+            target.style.reframe_keyframes = []
+            save_project(proj)
+            return target.model_dump()
+        keyframes = _detect_face_keyframes(video_path, target.start, target.end, src_w, crop_w)
+        max_x = max(1, src_w - crop_w)
+        target.style.reframe_keyframes = [
+            [round(float(t), 3), round(max(0.0, min(1.0, x / max_x)), 4)] for t, x in keyframes
+        ]
         save_project(proj)
         return target.model_dump()
 

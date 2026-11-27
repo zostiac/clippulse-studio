@@ -236,9 +236,12 @@ def _detect_face_keyframes(
         capture.release()
         return []
     try:
-        cascade_path = str(Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml")
-        detector = cv2.CascadeClassifier(cascade_path)
-        if detector.empty():
+        cascades = []
+        for name in ("haarcascade_frontalface_default.xml", "haarcascade_frontalface_alt2.xml", "haarcascade_profileface.xml"):
+            detector = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / name))
+            if not detector.empty():
+                cascades.append(detector)
+        if not cascades:
             return []
         duration = max(0.0, clip_end - clip_start)
         if duration <= 0 or src_w <= crop_w:
@@ -263,10 +266,19 @@ def _detect_face_keyframes(
             if factor < 1.0:
                 frame = cv2.resize(frame, (max(1, int(frame_w * factor)), max(1, int(frame_h * factor))))
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = detector.detectMultiScale(
-                gray, scaleFactor=1.1, minNeighbors=5, minSize=(28, 28)
-            )
+            gray = cv2.equalizeHist(gray)
+            faces = ()
+            for detector in cascades:
+                faces = detector.detectMultiScale(
+                    gray, scaleFactor=1.1, minNeighbors=4, minSize=(24, 24)
+                )
+                if len(faces) > 0:
+                    break
             if len(faces) == 0:
+                if previous_center is not None:
+                    # Hold the last known position through detection dropouts.
+                    crop_x = max(0.0, min(float(src_w - crop_w), previous_center - crop_w / 2.0))
+                    keyframes.append((relative_time, crop_x))
                 continue
             def score(box):
                 x, _y, width, _height = box
@@ -387,9 +399,20 @@ def export_clip_mp4(
             max_x = max(0, src_w - crop_w)
             crop_x = ((pan_x + 1.0) / 2.0) * max_x
             if clip.style.reframe_mode == "face_follow":
-                keyframes = _detect_face_keyframes(
-                    video_path, clip.start, clip.end, src_w, crop_w
-                )
+                stored = getattr(clip.style, "reframe_keyframes", None) or []
+                if stored:
+                    # Cached face-track results (normalized anchors) — the same
+                    # data the editor preview follows, so export matches it.
+                    max_x = max(1, src_w - crop_w)
+                    keyframes = [
+                        (float(item[0]), max(0.0, min(1.0, float(item[1]))) * max_x)
+                        for item in stored
+                        if len(item) >= 2
+                    ]
+                else:
+                    keyframes = _detect_face_keyframes(
+                        video_path, clip.start, clip.end, src_w, crop_w
+                    )
                 crop_x_expr = _crop_x_expression(keyframes, crop_x)
                 crop_x_expr = f"2*floor(({crop_x_expr})/2)"
                 crop_filter = f"crop=w={crop_w}:h={crop_h}:x='{crop_x_expr}':y=0"
