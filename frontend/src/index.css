@@ -114,6 +114,7 @@
   --font-label-code-sm: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
   --font-label-code-md: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
   --font-label-code-lg: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
 
   /* ---- Type scale (family 1 canonical) ---- */
   --text-display-lg: 48px;

@@ -1240,6 +1240,50 @@ def api_export_all(project_id: str):
     return response
 
 
+@app.post("/api/purge-exports")
+def api_purge_exports():
+    """Delete rendered export files (the render cache) and reset their clips to idle.
+
+    Source media, transcripts, and clips are kept; every clip can be re-exported.
+    """
+    freed = 0
+    purged = 0
+    orphans = 0
+    with _store_lock:
+        with _EXPORT_LOCK:
+            if _ACTIVE_EXPORTS:
+                raise HTTPException(status_code=409, detail="Wait for active exports to finish before purging the render cache.")
+        referenced = set()
+        for proj in list_projects():
+            changed = False
+            for clip in proj.clips:
+                if clip.export_filename:
+                    referenced.add(Path(clip.export_filename).name)
+                if clip.export_status in {"done", "error"}:
+                    if clip.export_filename:
+                        path = (EXPORTS_DIR / clip.export_filename).resolve()
+                        if path.is_relative_to(EXPORTS_DIR.resolve()) and path.is_file():
+                            freed += path.stat().st_size
+                            path.unlink(missing_ok=True)
+                    clip.export_status = "idle"
+                    clip.export_progress = 0
+                    clip.export_error = None
+                    clip.export_filename = None
+                    clip.export_url = None
+                    clip.exported_at = None
+                    purged += 1
+                    changed = True
+            if changed:
+                save_project(proj)
+        if EXPORTS_DIR.is_dir():
+            for path in EXPORTS_DIR.iterdir():
+                if path.is_file() and path.name not in referenced:
+                    freed += path.stat().st_size
+                    path.unlink(missing_ok=True)
+                    orphans += 1
+    return {"purged_clips": purged, "orphan_files": orphans, "freed_bytes": freed}
+
+
 @app.get("/api/projects/{project_id}/download-bundle")
 def api_download_bundle(project_id: str):
     proj = load_project(project_id)

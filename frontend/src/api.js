@@ -85,6 +85,7 @@ export const api = {
   listProjects: () => req("/api/projects"),
   getProject: (id) => req(`/api/projects/${encodeURIComponent(id)}`),
   deleteProject: (id) => req(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  purgeExports: () => req("/api/purge-exports", { method: "POST" }),
 
   createDemo: (demo_key) =>
     req("/api/projects/demo", {

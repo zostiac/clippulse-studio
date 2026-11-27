@@ -49,6 +49,13 @@ function statusPill(p) {
   );
 }
 
+function platformChips(p) {
+  const src = p.source_type;
+  if (src === "youtube") return ["YT Shorts", "IG Reels"];
+  if (src === "upload") return ["TikTok", "IG Reels"];
+  return ["YT Shorts", "TikTok"];
+}
+
 export default function Projects() {
   const {
     projects,
@@ -58,14 +65,15 @@ export default function Projects() {
     setArchived,
     reanalyze,
     exportAll,
+    purgeExports,
     search,
-    toast,
   } = useStudio();
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState("modified");
   const [view, setView] = useState("grid");
   const [selected, setSelected] = useState(() => new Set());
   const [confirmBatch, setConfirmBatch] = useState(false);
+  const [confirmPurge, setConfirmPurge] = useState(false);
 
   const toggleSelect = (id) => {
     setSelected((prev) => {
@@ -121,6 +129,18 @@ export default function Projects() {
 
   return (
     <div className="px-8 py-6 flex flex-col gap-6">
+      <ConfirmDialog
+        open={confirmPurge}
+        title="Purge the render cache?"
+        message="Deletes rendered export files to free vault space. Source media, transcripts, and clips are kept — you can re-export any clip afterwards."
+        confirmLabel="Purge cache"
+        danger
+        onConfirm={async () => {
+          setConfirmPurge(false);
+          await purgeExports();
+        }}
+        onCancel={() => setConfirmPurge(false)}
+      />
       <ConfirmDialog
         open={confirmBatch}
         title="Delete selected projects?"
@@ -279,7 +299,7 @@ export default function Projects() {
       {/* Cards / list */}
       {filtered.length === 0 ? (
         <div className="px-6 py-12 rounded-xl bg-white border border-line shadow-sm text-center">
-          <p className="font-body-md text-ink-muted">Nothing here yet. Ingest a video from the Dashboard to fill your vault.</p>
+          <p className="font-body-md text-body-md text-ink-muted">Nothing here yet. Ingest a video from the Dashboard to fill your vault.</p>
         </div>
       ) : view === "grid" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
@@ -338,7 +358,7 @@ export default function Projects() {
                       <div className="w-full h-full bg-gradient-to-br from-line to-line-soft" />
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/40" />
-                    <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
+                    <div className="absolute top-3 left-3 right-3 z-10 flex items-center justify-between">
                       <label className="cursor-pointer flex items-center justify-center w-6 h-6 rounded-md bg-white/90 backdrop-blur-md shadow-sm">
                         <input
                           className="accent-accent w-4 h-4 cursor-pointer"
@@ -358,7 +378,7 @@ export default function Projects() {
                         <span className="material-symbols-outlined text-[26px] filled">play_arrow</span>
                       </div>
                     </button>
-                    <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
+                    <div className="absolute bottom-3 left-3 right-3 z-10 flex items-center justify-between">
                       <span className="px-2.5 py-1 rounded-md bg-live-deep/90 backdrop-blur-md text-white font-mono text-[11px] font-semibold">
                         {topScore} Viral
                       </span>
@@ -388,8 +408,11 @@ export default function Projects() {
                       </span>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                      <span className="px-2 py-0.5 rounded bg-line-soft text-ink-muted font-mono text-[10px]">YT Shorts</span>
-                      <span className="px-2 py-0.5 rounded bg-line-soft text-ink-muted font-mono text-[10px]">IG Reels</span>
+                      {platformChips(p).map((chip) => (
+                        <span key={chip} className="px-2 py-0.5 rounded bg-line-soft text-ink-muted font-mono text-[10px]">
+                          {chip}
+                        </span>
+                      ))}
                     </div>
                   </div>
                   <div className="flex flex-col gap-3 pt-2 border-t border-line-soft">
@@ -464,11 +487,11 @@ export default function Projects() {
         </div>
         <button
           type="button"
-          onClick={() => toast("Cached proxies are managed automatically by the local export engine.", "info")}
+          onClick={() => setConfirmPurge(true)}
           className="px-4 py-2 rounded-lg bg-paper-cool border border-line text-accent hover:bg-accent-soft font-mono text-xs font-semibold transition-colors flex items-center gap-2"
         >
           <span className="material-symbols-outlined text-[16px]">cleaning_services</span>
-          <span>Purge Cached Proxies</span>
+          <span>Purge Render Cache</span>
         </button>
       </div>
     </div>
