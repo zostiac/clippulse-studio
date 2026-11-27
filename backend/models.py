@@ -89,6 +89,10 @@ class ClipStyle(BaseModel):
     caption_font: Literal["Arial", "Arial Black", "DejaVu Sans", "Impact"] = "Arial"
     # Face follow is performed locally during export; manual pan remains the fallback.
     reframe_mode: Literal["manual", "face_follow"] = "manual"
+    # Cached face-track results as [clip-relative seconds, normalized crop-x
+    # anchor 0..1]. Shared by the live preview and the export so the framing
+    # matches on both.
+    reframe_keyframes: List[List[float]] = Field(default_factory=list)
     show_hook_banner: bool = True
     hook_banner_text: str = ""
     # Vertical exports never drop below the 1080x1920 floor.
@@ -169,14 +173,18 @@ class Project(BaseModel):
     skip_transcription: bool = False
 
 
-AIProvider = Literal["local_free", "groq", "gemini", "openrouter", "openai"]
+AIProvider = Literal["hybrid", "local_free", "groq", "gemini", "openrouter", "openai"]
 TranscriptionProvider = Literal["auto", "groq", "openai", "local"]
 
 
 class AppSettings(BaseModel):
-    ai_provider: AIProvider = "groq"
+    # "hybrid" (default) runs the best engine per task: Groq transcribes
+    # (fastest free Whisper) while Gemini scores clips and writes metadata.
+    ai_provider: AIProvider = "hybrid"
     api_key: str = ""
     ai_model: str = ""
+    groq_api_key: str = ""
+    gemini_api_key: str = ""
     transcription_provider: TranscriptionProvider = "auto"
     transcription_api_key: str = ""
     enable_local_whisper: bool = True
@@ -190,6 +198,7 @@ class AppSettings(BaseModel):
     has_youtube_cookies: bool = False
     default_caption_style: Literal["hormozi", "beast", "minimal", "neon", "off"] = "hormozi"
     default_layout: Literal["center_crop", "blur_fill", "split_screen"] = "center_crop"
+    settings_version: int = 2
 
 
 # Re-entrant because request/export flows often hold the store lock while
@@ -284,6 +293,20 @@ def load_settings() -> AppSettings:
                     s.api_key = s.openai_api_key
                     if s.ai_provider == "local_free":
                         s.ai_provider = "openai"
+                if int(data.get("settings_version", 1)) < 2:
+                    # v2: per-service keys and hybrid task routing. The old
+                    # single-key picker is folded into the matching service key
+                    # and single-provider setups become hybrid (both at once).
+                    if s.api_key and not s.groq_api_key and not s.gemini_api_key:
+                        if s.ai_provider == "gemini":
+                            s.gemini_api_key = s.api_key
+                        elif s.ai_provider in ("groq", "local_free", "openrouter"):
+                            s.groq_api_key = s.groq_api_key or (
+                                s.api_key if s.ai_provider == "groq" else ""
+                            )
+                    if s.ai_provider in ("groq", "gemini"):
+                        s.ai_provider = "hybrid"
+                    s.settings_version = 2
                 s.has_youtube_cookies = COOKIES_FILE.exists() and COOKIES_FILE.stat().st_size > 10
                 return s
             except Exception:

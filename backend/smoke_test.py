@@ -571,10 +571,10 @@ if _ff and _ffprobe:
             ).stdout.strip()
             return tuple(int(v) for v in out.split(","))
 
-        def _pixel(path, x, y):
+        def _pixel(path, x, y, t=0.5):
             raw = subprocess.run(
                 [_ff, "-hide_banner", "-loglevel", "error", "-i", str(path),
-                 "-ss", "0.5", "-vf", f"format=rgb24,crop=1:1:{x}:{y}", "-frames:v", "1",
+                 "-ss", f"{t}", "-vf", f"format=rgb24,crop=1:1:{x}:{y}", "-frames:v", "1",
                  "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
                 check=True, capture_output=True,
             ).stdout
@@ -622,7 +622,65 @@ if _ff and _ffprobe:
         blur_out.unlink(missing_ok=True)
         (EXPORTS_DIR / "proj_deadbeef_clip_deadbeef.ass").unlink(missing_ok=True)
         print("blur_fill backdrop parity OK")
+
+        # face_follow with cached keyframes pans the crop across the source:
+        # early frames sit on the red (left) region, late frames on the blue.
+        face_out = export_clip_mp4(
+            _mk_clip(
+                "center_crop",
+                reframe_mode="face_follow",
+                reframe_keyframes=[[0.0, 0.0], [2.0, 1.0]],
+            ),
+            src,
+            2560,
+            720,
+            [],
+        )
+        assert _probe_size(face_out) == (1080, 1920)
+        r, g, b = _pixel(face_out, 540, 400, t=0.3)
+        assert r > 150 and b < 110, f"early face-follow frame should be red, got {(r, g, b)}"
+        r, g, b = _pixel(face_out, 540, 1500, t=1.7)
+        assert b > 150 and r < 110, f"late face-follow frame should be blue, got {(r, g, b)}"
+        face_out.unlink(missing_ok=True)
+        (EXPORTS_DIR / "proj_deadbeef_clip_deadbeef.ass").unlink(missing_ok=True)
+        print("face_follow cached keyframe parity OK")
 else:
     print("ffmpeg/ffprobe not found — skipped export render parity checks")
+
+# --- hybrid routing: per-service keys, task lanes, settings migration --------
+from analyzer import _llm_candidates, resolve_max_clips  # noqa: E402
+
+assert resolve_max_clips(AppSettings(), 1260) == 13  # Auto: ~1 clip / 2 min
+assert resolve_max_clips(AppSettings(max_clips=6), 1260) == 6
+
+assert _llm_candidates(AppSettings(ai_provider="hybrid", gemini_api_key="AIzaG", groq_api_key="gskQ")) == [
+    ("gemini", "AIzaG"),
+    ("groq", "gskQ"),
+]
+assert _llm_candidates(AppSettings(ai_provider="hybrid", groq_api_key="gskQ")) == [("groq", "gskQ")]
+assert _llm_candidates(AppSettings(ai_provider="hybrid", gemini_api_key="AIzaG")) == [("gemini", "AIzaG")]
+assert _llm_candidates(AppSettings(ai_provider="local_free", gemini_api_key="AIzaG")) == []
+assert _llm_candidates(AppSettings(ai_provider="gemini", api_key="AIzaX")) == [("gemini", "AIzaX")]
+assert _llm_candidates(AppSettings(ai_provider="groq", groq_api_key="gskQ")) == [("groq", "gskQ")]
+assert AppSettings().ai_provider == "hybrid"
+print("hybrid routing candidates OK")
+
+import json as _json  # noqa: E402
+
+with tempfile.TemporaryDirectory() as mig_td:
+    mig_file = Path(mig_td) / "settings.json"
+    mig_file.write_text(
+        _json.dumps({"ai_provider": "gemini", "api_key": "AIzaLegacy", "openai_api_key": "AIzaLegacy"}),
+        encoding="utf-8",
+    )
+    _orig_settings_file = _models.SETTINGS_FILE
+    _models.SETTINGS_FILE = mig_file
+    try:
+        migrated = _models.load_settings()
+        assert migrated.ai_provider == "hybrid", migrated.ai_provider
+        assert migrated.gemini_api_key == "AIzaLegacy", migrated.gemini_api_key
+    finally:
+        _models.SETTINGS_FILE = _orig_settings_file
+print("settings v2 hybrid migration OK")
 
 print("ALL SMOKE TESTS PASSED")

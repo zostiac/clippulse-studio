@@ -215,11 +215,13 @@ export default function Dashboard() {
 
   // The label must reflect the engine that will actually run: cloud providers
   // only engage when an API key is saved, otherwise everything stays local.
-  const hasKey = Boolean(settings?.api_key_preview);
+  const hasKey = Boolean(settings?.api_key_preview || settings?.has_groq_key || settings?.has_gemini_key);
   const cloud = settings?.ai_provider && settings.ai_provider !== "local_free" && hasKey;
   const aiLabel = !cloud
     ? `Whisper ${(settings?.whisper_model || "small").toUpperCase()} + Heuristic Scorer`
-    : settings.ai_provider === "groq"
+    : settings.ai_provider === "hybrid"
+      ? "Groq Whisper + Gemini Flash"
+      : settings.ai_provider === "groq"
       ? "Groq Large v3 + Llama 3.3"
       : settings.ai_provider === "openai"
         ? "Whisper-1 + GPT-4o-mini"

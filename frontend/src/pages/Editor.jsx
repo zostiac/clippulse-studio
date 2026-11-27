@@ -5,6 +5,7 @@ import { ConfirmDialog } from "../components/Dialogs.jsx";
 import { collectClipWords } from "../components/CaptionTrack.jsx";
 import CaptionTrack from "../components/CaptionTrack.jsx";
 import Waveform from "../components/Waveform.jsx";
+import { api } from "../api.js";
 
 const LAYOUTS = [
   { key: "center_crop", label: "Smart 9:16", icon: "crop_free" },
@@ -20,28 +21,71 @@ const CAPTION_STYLES = [
   { key: "off", label: "Captions Off", tag: "CLEAN", tagClass: "bg-surface-container text-on-surface-variant", hint: "None" },
 ];
 
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(query).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = (event) => setMatches(event.matches);
+    setMatches(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [query]);
+  return matches;
+}
+
+// Live mirror of the video element, cover-cropped at the given anchor. The
+// canvas buffer follows its on-screen size so the crop math is exact at any
+// phone scale, and the draw loop self-heals so a single bad frame can never
+// freeze the pane.
 function SplitMirror({ videoRef, cropX = 0.5, cropY = 0.75, className = "w-full h-1/2 pointer-events-none" }) {
   const canvasRef = useRef(null);
   useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
     let raf = 0;
+    let alive = true;
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const w = Math.max(2, Math.round(rect.width * dpr) || 2);
+      const h = Math.max(2, Math.round(rect.height * dpr) || 2);
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+    };
     const draw = () => {
-      const v = videoRef.current;
-      const c = canvasRef.current;
-      if (v && c && v.readyState >= 2 && v.videoWidth) {
-        const ctx = c.getContext("2d");
-        const scale = Math.max(c.width / v.videoWidth, c.height / v.videoHeight);
-        const sw = c.width / scale;
-        const sh = c.height / scale;
-        const sx = (v.videoWidth - sw) * cropX;
-        const sy = (v.videoHeight - sh) * cropY;
-        ctx.drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
+      if (!alive) return;
+      try {
+        resize();
+        const v = videoRef.current;
+        const c = canvasRef.current;
+        if (v && c && v.readyState >= 2 && v.videoWidth > 0 && v.videoHeight > 0) {
+          const ctx = c.getContext("2d");
+          if (ctx) {
+            const scale = Math.max(c.width / v.videoWidth, c.height / v.videoHeight);
+            const sw = c.width / scale;
+            const sh = c.height / scale;
+            const sx = (v.videoWidth - sw) * Math.max(0, Math.min(1, cropX));
+            const sy = (v.videoHeight - sh) * Math.max(0, Math.min(1, cropY));
+            ctx.drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
+          }
+        }
+      } catch {
+        // Never let one failed frame kill the loop.
       }
       raf = requestAnimationFrame(draw);
     };
+    resize();
     raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      alive = false;
+      cancelAnimationFrame(raf);
+    };
   }, [videoRef, cropX, cropY]);
-  return <canvas ref={canvasRef} width={620} height={550} className={className} aria-hidden="true" />;
+  return <canvas ref={canvasRef} className={className} aria-hidden="true" />;
 }
 
 const RESOLUTIONS = [
@@ -80,6 +124,8 @@ export default function Editor() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const videoRef = useRef(null);
   const trimTimer = useRef(null);
+  const isXl = useMediaQuery("(min-width: 1280px)");
+  const [faceTracking, setFaceTracking] = useState(false);
 
   // Sync playhead when the selected clip changes
   useEffect(() => {
@@ -137,6 +183,51 @@ export default function Editor() {
   const patchStyle = (patch) => {
     if (!clip) return;
     updateClip(project.id, clip.id, { style: { ...clip.style, ...patch } }, { silent: true });
+  };
+
+  // Linear interpolation over the cached face-track keyframes at clip time t.
+  const faceAnchorAt = (t) => {
+    const pts = clip?.style?.reframe_keyframes || [];
+    if (!pts.length) return null;
+    const rel = t - (clip?.start || 0);
+    if (rel <= pts[0][0]) return pts[0][1];
+    for (let i = 1; i < pts.length; i += 1) {
+      if (rel <= pts[i][0]) {
+        const [t0, x0] = pts[i - 1];
+        const [t1, x1] = pts[i];
+        const span = t1 - t0;
+        const f = span > 0 ? (rel - t0) / span : 1;
+        return x0 + (x1 - x0) * f;
+      }
+    }
+    return pts[pts.length - 1][1];
+  };
+
+  const onReframeMode = async (mode) => {
+    if (!clip || !project) return;
+    patchStyle({ reframe_mode: mode });
+    if (mode === "face_follow") {
+      setFaceTracking(true);
+      try {
+        const updated = await api.faceTrackClip(project.id, clip.id);
+        const kfs = updated?.style?.reframe_keyframes || [];
+        await updateClip(
+          project.id,
+          clip.id,
+          { style: { ...clip.style, reframe_mode: "face_follow", reframe_keyframes: kfs } },
+          { silent: true }
+        );
+        if (kfs.length) {
+          toast(`Auto AI tracked ${kfs.length} keyframes — the preview and export now follow the speaker.`, "success");
+        } else {
+          toast("No face movement detected in this clip — the crop stays centered. Use Manual to pan.", "info");
+        }
+      } catch {
+        toast("Face tracking failed — switch to Manual to pan the crop.", "error");
+      } finally {
+        setFaceTracking(false);
+      }
+    }
   };
 
   const patchMeta = (patch) => {
@@ -258,7 +349,7 @@ export default function Editor() {
         </div>
       </div>
 
-      <div className="xl:hidden flex items-center gap-1 px-2 py-1.5 bg-surface-container-lowest border-b border-outline-variant/40">
+      <div className="flex items-center gap-1 px-2 py-1.5 bg-surface-container-lowest border-b border-outline-variant/40" style={{ display: isXl ? "none" : "flex" }}>
         {[
           { key: "clips", label: "Clips", icon: "list_alt" },
           { key: "stage", label: "Stage", icon: "smartphone" },
@@ -282,7 +373,7 @@ export default function Editor() {
       </div>
       <div className="grid grid-cols-12 gap-0 h-[calc(100dvh-160px)] xl:h-[calc(100dvh-116px)] overflow-hidden bg-surface">
         {/* LEFT: clips drawer */}
-        <aside className={`col-span-12 xl:col-span-3 min-h-0 bg-surface-container-low p-margin-sm flex-col gap-space-md shadow-[inset_-1px_0_0_rgba(15,23,42,0.04)] ${mobilePane === "clips" ? "flex" : "hidden"} xl:flex`}>
+        <aside className="col-span-12 xl:col-span-3 min-h-0 bg-surface-container-low p-margin-sm flex-col gap-space-md shadow-[inset_-1px_0_0_rgba(15,23,42,0.04)]" style={{ display: isXl || mobilePane === "clips" ? "flex" : "none" }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="font-label-lg text-label-lg font-semibold tracking-wider text-on-surface uppercase">VIRAL CLIPS</span>
@@ -420,7 +511,7 @@ export default function Editor() {
         </aside>
 
         {/* CENTER: monitor + transport */}
-        <main className={`col-span-12 xl:col-span-6 min-h-0 overflow-y-auto p-space-md flex-col justify-between gap-space-md bg-surface ${mobilePane === "stage" ? "flex" : "hidden"} xl:flex`}>
+        <main className="col-span-12 xl:col-span-6 min-h-0 overflow-y-auto p-space-md flex-col justify-between gap-space-md bg-surface" style={{ display: isXl || mobilePane === "stage" ? "flex" : "none" }}>
           <div className="shrink-0 flex items-center justify-between bg-surface-container-lowest p-2 rounded-xl shadow-sm">
             <div className="flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm font-medium">
               <span className="material-symbols-outlined text-[18px]">aspect_ratio</span>
@@ -453,8 +544,8 @@ export default function Editor() {
           </div>
 
           {/* Phone monitor */}
-          <div className="flex justify-center items-center flex-1 min-h-[240px] py-1">
-            <div className="relative h-full max-h-[550px] aspect-[310/550] bg-inverse-surface rounded-[38px] p-2.5 shadow-2xl flex flex-col justify-between overflow-hidden ring-4 ring-surface-container-highest">
+          <div className="relative flex justify-center items-center flex-1 min-h-[120px] py-1">
+            <div className="absolute inset-0 m-auto h-full max-h-[550px] aspect-[310/550] bg-inverse-surface rounded-[38px] p-2.5 shadow-2xl flex flex-col justify-between overflow-hidden ring-4 ring-surface-container-highest">
               <div className="relative w-full h-full rounded-[30px] overflow-hidden bg-black flex flex-col justify-between">
                 {clip?.style.layout === "blur_fill" ? (
                   <>
@@ -501,7 +592,12 @@ export default function Editor() {
                     muted={muted}
                     playsInline
                     preload="metadata"
-                    style={{ objectPosition: `${50 + (clip?.style.pan_x || 0) * 35}% 50%` }}
+                    style={{
+                      objectPosition:
+                        clip?.style.reframe_mode === "face_follow"
+                          ? `${((faceAnchorAt(currentTime) ?? 0.5) * 100).toFixed(2)}% 50%`
+                          : `${50 + (clip?.style.pan_x || 0) * 50}% 50%`,
+                    }}
                   />
                 )}
                 <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/60 pointer-events-none" />
@@ -708,7 +804,7 @@ export default function Editor() {
         </main>
 
         {/* RIGHT: inspector */}
-        <aside className={`col-span-12 xl:col-span-3 min-h-0 bg-surface-container-lowest p-margin-sm flex-col gap-space-md shadow-[inset_1px_0_0_rgba(15,23,42,0.04)] overflow-y-auto ${mobilePane === "inspect" ? "flex" : "hidden"} xl:flex`}>
+        <aside className="col-span-12 xl:col-span-3 min-h-0 bg-surface-container-lowest p-margin-sm flex-col gap-space-md shadow-[inset_1px_0_0_rgba(15,23,42,0.04)] overflow-y-auto" style={{ display: isXl || mobilePane === "inspect" ? "flex" : "none" }}>
           <div className="flex items-center p-1 bg-surface-container-low rounded-xl">
             {[
               { key: "style", label: "Style" },
@@ -855,18 +951,23 @@ export default function Editor() {
                       <button
                         key={mode}
                         type="button"
-                        onClick={() => patchStyle({ reframe_mode: mode })}
+                        onClick={() => onReframeMode(mode)}
                         className={`px-2 py-0.5 rounded font-label-sm text-label-sm transition-all ${
                           clip.style.reframe_mode === mode
                             ? "bg-surface-container-lowest text-on-surface font-semibold shadow-sm"
                             : "text-on-surface-variant font-medium"
                         }`}
                       >
-                        {mode === "manual" ? "Manual" : "Auto AI"}
+                        {mode === "manual" ? "Manual" : faceTracking ? "Tracking…" : "Auto AI"}
                       </button>
                     ))}
                   </div>
                 </div>
+                <p className="text-on-surface-variant font-body-sm text-[11px]">
+                  {clip.style.reframe_mode === "face_follow"
+                    ? "Auto AI follows the detected face — preview and export share the same tracking."
+                    : "Drag to reframe the 9:16 crop across the source."}
+                </p>
                 <div className="flex flex-col gap-1 pt-1">
                   <div className="flex justify-between font-label-sm text-label-sm text-on-surface-variant">
                     <span>Left Pan</span>

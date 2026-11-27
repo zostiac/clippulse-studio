@@ -140,6 +140,12 @@ export const api = {
   exportClip: (projectId, clipId) =>
     req(`/api/projects/${encodeURIComponent(projectId)}/clips/${encodeURIComponent(clipId)}/export`, { method: "POST" }),
 
+  faceTrackClip: (projectId, clipId) =>
+    req(`/api/projects/${encodeURIComponent(projectId)}/clips/${encodeURIComponent(clipId)}/face-track`, {
+      method: "POST",
+      timeoutMs: 90000,
+    }),
+
   exportAll: (projectId) =>
     req(`/api/projects/${encodeURIComponent(projectId)}/export-all`, { method: "POST" }),
 
