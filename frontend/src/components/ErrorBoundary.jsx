@@ -18,19 +18,19 @@ export default class ErrorBoundary extends React.Component {
     if (!this.state.hasError) return this.props.children;
 
     return (
-      <main className="min-h-screen flex items-center justify-center p-6 bg-[#faf8ff] text-[#131b2e]">
-        <section className="w-full max-w-md rounded-xl border border-[#e2e8f0] bg-white p-6 text-center shadow-lg">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-[#ffdad6] text-[#ba1a1a]">
+      <main className="min-h-screen flex items-center justify-center p-6 bg-surface text-on-surface">
+        <section className="w-full max-w-md rounded-xl border border-outline-variant bg-surface-container-lowest p-6 text-center shadow-[0_20px_32px_-8px_rgba(15,23,42,0.08)]">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-error-container text-on-error-container">
             <span className="material-symbols-outlined text-[24px]">error</span>
           </div>
-          <h1 className="text-lg font-semibold text-[#0f172a]">The studio encountered an error</h1>
-          <p className="mt-2 text-sm leading-relaxed text-[#64748b]">
+          <h1 className="text-lg font-semibold">The studio encountered an error</h1>
+          <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
             Your saved projects are stored separately. Reload the studio to try again.
           </p>
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="mt-5 rounded-lg bg-[#b45309] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#903f00]"
+            className="mt-5 rounded-lg bg-primary-container px-4 py-2.5 text-sm font-semibold text-on-primary-container transition hover:bg-primary"
           >
             Reload studio
           </button>

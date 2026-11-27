@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStudio, routeTo } from "../studio.jsx";
 import { fmtTC, clamp } from "../utils/format.js";
+import { ConfirmDialog } from "../components/Dialogs.jsx";
 import { collectClipWords } from "../components/CaptionTrack.jsx";
 import CaptionTrack from "../components/CaptionTrack.jsx";
 import Waveform from "../components/Waveform.jsx";
@@ -18,6 +19,30 @@ const CAPTION_STYLES = [
   { key: "neon", label: "Neon Creator", tag: "NEON POP", tagClass: "bg-surface-container-highest text-on-surface", hint: "Glow" },
   { key: "off", label: "Captions Off", tag: "CLEAN", tagClass: "bg-surface-container text-on-surface-variant", hint: "None" },
 ];
+
+function SplitMirror({ videoRef, cropY = 0.75 }) {
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    let raf = 0;
+    const draw = () => {
+      const v = videoRef.current;
+      const c = canvasRef.current;
+      if (v && c && v.readyState >= 2 && v.videoWidth) {
+        const ctx = c.getContext("2d");
+        const scale = Math.max(c.width / v.videoWidth, c.height / v.videoHeight);
+        const sw = c.width / scale;
+        const sh = c.height / scale;
+        const sx = (v.videoWidth - sw) / 2;
+        const sy = (v.videoHeight - sh) * cropY;
+        ctx.drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [videoRef, cropY]);
+  return <canvas ref={canvasRef} width={620} height={550} className="w-full h-1/2 pointer-events-none" aria-hidden="true" />;
+}
 
 const RESOLUTIONS = [
   { label: "1080x1920 • Full HD (60fps HQ)", value: "1080x1920" },
@@ -46,11 +71,13 @@ export default function Editor() {
 
   const [safeZone, setSafeZone] = useState("clean");
   const [inspectorTab, setInspectorTab] = useState("style");
+  const [mobilePane, setMobilePane] = useState("stage");
   const [playing, setPlaying] = useState(false);
   const [loop, setLoop] = useState(true);
   const [muted, setMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(clip?.start || 0);
   const [resolution, setResolution] = useState("1080x1920");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const videoRef = useRef(null);
   const trimTimer = useRef(null);
 
@@ -146,6 +173,8 @@ export default function Editor() {
     if (created) navigate(routeTo("editor", project.id, created.id));
   };
 
+  const words = useMemo(() => collectClipWords(project, clip), [project, clip]);
+
   if (!project) {
     return (
       <div className="flex items-center justify-center h-[70vh]">
@@ -166,7 +195,6 @@ export default function Editor() {
     );
   }
 
-  const words = collectClipWords(project, clip);
   const activeIdx = clip ? clips.findIndex((c) => c.id === clip.id) + 1 : 0;
   const exporting = clip?.export_status === "rendering";
   const exported = clip?.export_status === "done";
@@ -210,21 +238,51 @@ export default function Editor() {
               type="button"
               className="p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
               title="Delete clip"
-              onClick={() => {
-                if (clip && window.confirm("Delete this clip?")) {
-                  deleteClip(project.id, clip.id).then(() => navigate(routeTo("editor", project.id)));
-                }
-              }}
+              onClick={() => clip && setConfirmDelete(true)}
             >
               <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
             </button>
+            <ConfirmDialog
+              open={confirmDelete}
+              title="Delete this clip?"
+              message={`"${clip?.title || "This clip"}" will be removed from the project. This cannot be undone.`}
+              confirmLabel="Delete clip"
+              danger
+              onConfirm={() => {
+                setConfirmDelete(false);
+                if (clip) deleteClip(project.id, clip.id).then(() => navigate(routeTo("editor", project.id)));
+              }}
+              onCancel={() => setConfirmDelete(false)}
+            />
           </div>
         </div>
       </div>
 
+      <div className="xl:hidden flex items-center gap-1 px-2 py-1.5 bg-surface-container-lowest border-b border-outline-variant/40">
+        {[
+          { key: "clips", label: "Clips", icon: "list_alt" },
+          { key: "stage", label: "Stage", icon: "smartphone" },
+          { key: "inspect", label: "Inspect", icon: "tune" },
+        ].map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setMobilePane(t.key)}
+            aria-pressed={mobilePane === t.key}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg font-label-sm text-label-sm uppercase transition-colors ${
+              mobilePane === t.key
+                ? "bg-primary-container text-on-primary-container font-semibold shadow-sm"
+                : "text-on-surface-variant hover:bg-surface-container"
+            }`}
+          >
+            <span className="material-symbols-outlined text-[16px]">{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
       <div className="grid grid-cols-12 gap-0 min-h-[calc(100vh-112px)] bg-surface">
         {/* LEFT: clips drawer */}
-        <aside className="col-span-12 xl:col-span-3 bg-surface-container-low p-margin-sm flex flex-col gap-space-md shadow-[inset_-1px_0_0_rgba(15,23,42,0.04)]">
+        <aside className={`col-span-12 xl:col-span-3 bg-surface-container-low p-margin-sm flex-col gap-space-md shadow-[inset_-1px_0_0_rgba(15,23,42,0.04)] ${mobilePane === "clips" ? "flex" : "hidden"} xl:flex`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="font-label-lg text-label-lg font-semibold tracking-wider text-on-surface uppercase">VIRAL CLIPS</span>
@@ -362,7 +420,7 @@ export default function Editor() {
         </aside>
 
         {/* CENTER: monitor + transport */}
-        <main className="col-span-12 xl:col-span-6 p-space-md flex flex-col justify-between gap-space-md bg-surface">
+        <main className={`col-span-12 xl:col-span-6 p-space-md flex-col justify-between gap-space-md bg-surface ${mobilePane === "stage" ? "flex" : "hidden"} xl:flex`}>
           <div className="flex items-center justify-between bg-surface-container-lowest p-2 rounded-xl shadow-sm">
             <div className="flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm font-medium">
               <span className="material-symbols-outlined text-[18px]">aspect_ratio</span>
@@ -424,14 +482,7 @@ export default function Editor() {
                       preload="metadata"
                       style={{ objectPosition: "center 25%" }}
                     />
-                    <video
-                      className="w-full h-1/2 object-cover pointer-events-none"
-                      src={project.video_url}
-                      muted
-                      playsInline
-                      preload="metadata"
-                      style={{ objectPosition: "center 75%" }}
-                    />
+                    <SplitMirror videoRef={videoRef} cropY={0.75} />
                   </div>
                 ) : (
                   <video
@@ -486,7 +537,7 @@ export default function Editor() {
 
                 {/* captions */}
                 {words.length > 0 ? (
-                  <CaptionTrack project={project} clip={clip} currentTime={currentTime} style={clip?.style} />
+                  <CaptionTrack project={project} clip={clip} currentTime={currentTime} style={clip?.style} words={words} />
                 ) : (
                   <div className="relative z-10 mx-3 mb-10 flex justify-center">
                     <span className="px-2.5 py-1 rounded bg-black/60 font-label-sm text-label-sm text-white/80">
@@ -607,7 +658,7 @@ export default function Editor() {
               <span className="font-label-sm text-label-sm text-on-surface-variant uppercase font-medium">Export Preset:</span>
               <div className="relative">
                 <select
-                  className="appearance-none bg-surface-container-low text-on-surface font-body-sm text-body-sm font-semibold pl-3 pr-8 py-1.5 rounded-lg border-none focus:outline-none focus:ring-1 focus:ring-primary-container cursor-pointer"
+                  className="appearance-none bg-surface-container-low text-on-surface font-body-sm text-body-sm font-semibold pl-3 pr-8 py-1.5 rounded-lg border-none focus:ring-1 focus:ring-primary-container cursor-pointer"
                   value={resolution}
                   onChange={(e) => setResolution(e.target.value)}
                 >
@@ -655,7 +706,7 @@ export default function Editor() {
         </main>
 
         {/* RIGHT: inspector */}
-        <aside className="col-span-12 xl:col-span-3 bg-surface-container-lowest p-margin-sm flex flex-col gap-space-md shadow-[inset_1px_0_0_rgba(15,23,42,0.04)] overflow-y-auto">
+        <aside className={`col-span-12 xl:col-span-3 bg-surface-container-lowest p-margin-sm flex-col gap-space-md shadow-[inset_1px_0_0_rgba(15,23,42,0.04)] overflow-y-auto ${mobilePane === "inspect" ? "flex" : "hidden"} xl:flex`}>
           <div className="flex items-center p-1 bg-surface-container-low rounded-xl">
             {[
               { key: "style", label: "Style" },
@@ -685,7 +736,7 @@ export default function Editor() {
                   <span className="text-on-surface-variant font-normal">{clip.title.length} chars</span>
                 </label>
                 <textarea
-                  className="w-full p-2.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm border border-outline-variant/30 focus:border-secondary focus:outline-none focus:ring-1 focus:ring-secondary/20 transition-all resize-none font-medium"
+                  className="w-full p-2.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm border border-outline-variant/30 focus:border-secondary focus:ring-1 focus:ring-secondary/20 transition-all resize-none font-medium"
                   rows={2}
                   value={clip.title}
                   onChange={(e) => {
@@ -769,6 +820,7 @@ export default function Editor() {
                   <input
                     className="w-full accent-primary-container cursor-pointer"
                     type="range"
+                    aria-label="Speaker pan position"
                     min="-100"
                     max="100"
                     value={Math.round((clip.style.pan_x || 0) * 100)}
@@ -795,7 +847,7 @@ export default function Editor() {
                   </button>
                 </div>
                 <input
-                  className="w-full px-2.5 py-1.5 rounded-lg bg-surface-container-lowest text-on-surface font-headline-sm text-body-sm font-bold border border-outline-variant/30 focus:outline-none focus:ring-1 focus:ring-primary-container"
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-surface-container-lowest text-on-surface font-headline-sm text-body-sm font-bold border border-outline-variant/30 focus:ring-1 focus:ring-primary-container"
                   type="text"
                   value={clip.style.hook_banner_text || ""}
                   placeholder="RIGHT? WELL, NO..."
@@ -866,6 +918,7 @@ export default function Editor() {
                   <input
                     className="w-full accent-primary-container cursor-pointer"
                     type="range"
+                    aria-label="Caption font size"
                     min="32"
                     max="80"
                     value={clip.style.font_size}
@@ -881,6 +934,7 @@ export default function Editor() {
                   <input
                     className="w-full accent-primary-container cursor-pointer"
                     type="range"
+                    aria-label="Words per caption line"
                     min="1"
                     max="6"
                     value={clip.style.words_per_line}
@@ -893,7 +947,7 @@ export default function Editor() {
                 <div className="flex flex-col gap-1">
                   <label className="font-label-sm text-label-sm font-medium text-on-surface-variant uppercase">Animation</label>
                   <select
-                    className="px-2 py-1.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm focus:outline-none"
+                    className="px-2 py-1.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm"
                     value={clip.style.caption_animation}
                     onChange={(e) => patchStyle({ caption_animation: e.target.value })}
                   >
@@ -906,7 +960,7 @@ export default function Editor() {
                 <div className="flex flex-col gap-1">
                   <label className="font-label-sm text-label-sm font-medium text-on-surface-variant uppercase">Case</label>
                   <select
-                    className="px-2 py-1.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm focus:outline-none"
+                    className="px-2 py-1.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm"
                     value={clip.style.caption_case}
                     onChange={(e) => patchStyle({ caption_case: e.target.value })}
                   >
@@ -919,7 +973,7 @@ export default function Editor() {
                 <div className="flex flex-col gap-1">
                   <label className="font-label-sm text-label-sm font-medium text-on-surface-variant uppercase">Highlight</label>
                   <select
-                    className="px-2 py-1.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm focus:outline-none"
+                    className="px-2 py-1.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm"
                     value={clip.style.caption_highlight}
                     onChange={(e) => patchStyle({ caption_highlight: e.target.value })}
                   >
@@ -934,7 +988,7 @@ export default function Editor() {
                 <div className="flex flex-col gap-1">
                   <label className="font-label-sm text-label-sm font-medium text-on-surface-variant uppercase">Background</label>
                   <select
-                    className="px-2 py-1.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm focus:outline-none"
+                    className="px-2 py-1.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm"
                     value={clip.style.caption_background}
                     onChange={(e) => patchStyle({ caption_background: e.target.value })}
                   >
@@ -955,7 +1009,7 @@ export default function Editor() {
                   YouTube Shorts Title
                 </label>
                 <textarea
-                  className="w-full p-2.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm border border-outline-variant/30 focus:border-secondary focus:outline-none resize-none"
+                  className="w-full p-2.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm border border-outline-variant/30 focus:border-secondary resize-none"
                   rows={2}
                   value={clip.platform_meta.youtube_title}
                   onChange={(e) => patchMeta({ youtube_title: e.target.value })}
@@ -966,7 +1020,7 @@ export default function Editor() {
                   TikTok Caption
                 </label>
                 <textarea
-                  className="w-full p-2.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm border border-outline-variant/30 focus:border-secondary focus:outline-none resize-none"
+                  className="w-full p-2.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm border border-outline-variant/30 focus:border-secondary resize-none"
                   rows={2}
                   value={clip.platform_meta.tiktok_caption}
                   onChange={(e) => patchMeta({ tiktok_caption: e.target.value })}
@@ -977,7 +1031,7 @@ export default function Editor() {
                   Instagram Caption
                 </label>
                 <textarea
-                  className="w-full p-2.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm border border-outline-variant/30 focus:border-secondary focus:outline-none resize-none"
+                  className="w-full p-2.5 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm border border-outline-variant/30 focus:border-secondary resize-none"
                   rows={2}
                   value={clip.platform_meta.instagram_caption}
                   onChange={(e) => patchMeta({ instagram_caption: e.target.value })}

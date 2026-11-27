@@ -72,10 +72,29 @@ export default function Waveform({
     <div className="flex flex-col gap-1 select-none">
       <div
         ref={trackRef}
+        role="slider"
+        tabIndex={0}
+        aria-label="Clip waveform scrubber"
+        aria-valuemin={Math.round(start * 10) / 10}
+        aria-valuemax={Math.round(end * 10) / 10}
+        aria-valuenow={Math.round((currentTime ?? 0) * 10) / 10}
         className="relative w-full h-16 bg-surface-container rounded-lg overflow-hidden cursor-crosshair flex items-center px-1"
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onClick={(e) => onSeek?.(timeAt(e.clientX))}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+            e.preventDefault();
+            const delta = e.key === "ArrowLeft" ? -1 : 1;
+            onSeek?.(Math.min(end, Math.max(start, (currentTime ?? 0) + delta)));
+          } else if (e.key === "Home") {
+            e.preventDefault();
+            onSeek?.(start);
+          } else if (e.key === "End") {
+            e.preventDefault();
+            onSeek?.(end);
+          }
+        }}
       >
         <svg className="w-full h-12 text-outline-variant" preserveAspectRatio="none" viewBox={`0 0 ${W} ${H}`}>
           <path d={peaksPath(energyPeaks, W, H)} fill="currentColor" opacity="0.7" />

@@ -67,14 +67,24 @@ _whisper_lock = threading.Lock()
 _whisper_cache: Dict[str, object] = {}
 
 
-def _get_local_whisper(model_name: str):
+def _get_local_whisper(model_name: str, use_cuda: bool = True):
     from faster_whisper import WhisperModel
+
+    device = "cuda" if use_cuda else "cpu"
+    compute_type = "float16" if use_cuda else "int8"
+    cache_key = f"{model_name}:{device}"
     with _whisper_lock:
-        if model_name not in _whisper_cache:
-            _whisper_cache[model_name] = WhisperModel(
-                model_name, device="cpu", compute_type="int8"
-            )
-        return _whisper_cache[model_name]
+        if cache_key not in _whisper_cache:
+            try:
+                _whisper_cache[cache_key] = WhisperModel(
+                    model_name, device=device, compute_type=compute_type
+                )
+            except Exception:
+                # CUDA unavailable (or the model rejected the device): CPU INT8 fallback.
+                _whisper_cache[cache_key] = WhisperModel(
+                    model_name, device="cpu", compute_type="int8"
+                )
+        return _whisper_cache[cache_key]
 
 
 def _extract_audio(video_path: Path, out_args: List[str], out_path: Path) -> None:
@@ -272,12 +282,14 @@ def _iter_wav_chunks(wav_path: Path, chunk_seconds: int = 60, overlap_seconds: i
             frame_start += step_frames
 
 
-def transcribe_with_local_whisper(video_path: Path, model_name: str = "tiny") -> List[TranscriptSegment]:
+def transcribe_with_local_whisper(
+    video_path: Path, model_name: str = "tiny", use_cuda: bool = True
+) -> List[TranscriptSegment]:
     """Transcribe bounded audio windows to keep RAM use predictable on long videos."""
     wav_path = video_path.parent / "audio_local.wav"
     try:
         _extract_audio(video_path, ["-c:a", "pcm_s16le", "-f", "wav"], wav_path)
-        model = _get_local_whisper(model_name or "tiny")
+        model = _get_local_whisper(model_name or "tiny", use_cuda=use_cuda)
         segments: List[TranscriptSegment] = []
         from ingest import distribute_words
 
@@ -722,7 +734,9 @@ def analyze_project(
         if not transcript and settings.enable_local_whisper:
             attempted = True
             try:
-                transcript = transcribe_with_local_whisper(video_path, settings.whisper_model)
+                transcript = transcribe_with_local_whisper(
+                    video_path, settings.whisper_model, use_cuda=getattr(settings, "use_cuda", True)
+                )
                 if transcript:
                     engine_used = "local_whisper"
                 else:

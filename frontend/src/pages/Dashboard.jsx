@@ -70,7 +70,7 @@ function ProjectCard({ project }) {
             <img
               className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
               src={project.thumbnail_url}
-              alt=""
+              alt={project.title}
             />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-surface-container to-surface-dim" />
@@ -118,7 +118,7 @@ function ProjectCard({ project }) {
         </div>
         <div className="flex items-center gap-space-xs mb-1">
           <span className="font-label-sm text-label-sm text-on-surface-variant font-medium">
-            Last modified {fmtRelTime(project.created_at)}
+            Last modified {fmtRelTime(project.updated_at || project.created_at)}
           </span>
           <span className="text-on-surface-variant">•</span>
           <span className="font-label-sm text-label-sm text-primary-container font-semibold">{exported} Clips Exported</span>
@@ -182,7 +182,6 @@ export default function Dashboard() {
   const [view, setView] = useState("grid");
 
   const recent = [...projects].sort((a, b) => b.created_at - a.created_at).slice(0, 4);
-  const analyzing = projects.filter((p) => p.status === "analyzing" || p.status === "ingesting").length;
 
   const onFindClips = () => {
     const url = ytUrl.trim();
@@ -299,7 +298,7 @@ export default function Dashboard() {
                     <div className="relative flex-1 flex items-center">
                       <span className="material-symbols-outlined absolute left-space-md text-on-surface-variant text-[20px]">link</span>
                       <input
-                        className="w-full pl-11 pr-space-md py-3.5 bg-surface-container-lowest rounded-lg font-body-md text-body-md text-on-surface placeholder:text-on-surface-variant focus:outline-none shadow-sm"
+                        className="w-full pl-11 pr-space-md py-3.5 bg-surface-container-lowest rounded-lg font-body-md text-body-md text-on-surface placeholder:text-on-surface-variant shadow-sm"
                         id="youtube-url"
                         placeholder="https://www.youtube.com/watch?v=... or youtu.be/dQw4w9WgXcQ"
                         type="url"
@@ -341,7 +340,7 @@ export default function Dashboard() {
                   {showTranscript && (
                     <div className="px-space-md pb-space-md pt-space-xs">
                       <textarea
-                        className="w-full p-space-sm rounded bg-surface-container-lowest font-label-sm text-label-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none shadow-inner resize-y"
+                        className="w-full p-space-sm rounded bg-surface-container-lowest font-label-sm text-label-sm text-on-surface placeholder:text-on-surface-variant shadow-inner resize-y"
                         placeholder="Paste timestamps and spoken text here (e.g. 00:00:15 Look, here is the secret to scaling customer acquisition...)"
                         rows={3}
                         value={ytTranscript}
@@ -396,7 +395,7 @@ export default function Dashboard() {
                             <img
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                               src={card.art}
-                              alt=""
+                              alt={card.title}
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-inverse-surface/80 via-transparent to-transparent" />
                             <div className="absolute top-2 left-2">
@@ -473,7 +472,7 @@ export default function Dashboard() {
                     <div className="flex flex-col gap-1.5">
                       <label className="font-body-sm text-body-sm font-medium text-on-surface">Project Title (Optional)</label>
                       <input
-                        className="px-space-md py-2.5 rounded bg-surface-container-low text-on-surface font-body-sm text-body-sm focus:outline-none"
+                        className="px-space-md py-2.5 rounded bg-surface-container-low text-on-surface font-body-sm text-body-sm"
                         placeholder="e.g. Masterclass Q3 Keynote Recording"
                         type="text"
                         value={projectTitle}
@@ -483,7 +482,7 @@ export default function Dashboard() {
                     <div className="flex flex-col gap-1.5">
                       <label className="font-body-sm text-body-sm font-medium text-on-surface">Subtitle Source</label>
                       <select
-                        className="px-space-md py-2.5 rounded bg-surface-container-low text-on-surface font-body-sm text-body-sm focus:outline-none"
+                        className="px-space-md py-2.5 rounded bg-surface-container-low text-on-surface font-body-sm text-body-sm"
                         value={subtitleSource}
                         onChange={(e) => setSubtitleSource(e.target.value)}
                       >
@@ -536,7 +535,7 @@ export default function Dashboard() {
                       className="bg-surface-container-low p-space-sm rounded-lg flex flex-col gap-2 hover:bg-surface-container transition-all cursor-pointer text-left disabled:opacity-60"
                     >
                       <div className="h-28 rounded bg-surface-dim overflow-hidden relative">
-                        <img className="w-full h-full object-cover" src={tile.art} alt="" />
+                        <img className="w-full h-full object-cover" src={tile.art} alt={tile.title} />
                         <span className="absolute bottom-1 right-1 font-label-sm text-[9px] bg-inverse-surface/80 text-inverse-on-surface px-1 rounded">
                           {tile.tag}
                         </span>
@@ -559,7 +558,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-space-sm">
               <h2 className="font-headline-md text-headline-md text-on-surface font-semibold">Recent Studio Projects</h2>
               <span className="px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface font-label-sm text-label-sm font-semibold">
-                {projects.length} active
+                {projects.filter((pr) => !pr.archived).length} active
               </span>
             </div>
             <div className="flex items-center gap-space-xs">

@@ -24,8 +24,8 @@ export function collectClipWords(project, clip) {
   return words;
 }
 
-export default function CaptionTrack({ project, clip, currentTime, style, className = "" }) {
-  const words = collectClipWords(project, clip);
+export default function CaptionTrack({ project, clip, currentTime, style, words: wordsProp, className = "" }) {
+  const words = wordsProp || collectClipWords(project, clip);
   const capStyle = style || clip?.style || {};
   if (!words.length || capStyle.caption_style === "off") return null;
 
@@ -66,7 +66,7 @@ export default function CaptionTrack({ project, clip, currentTime, style, classN
           if (isActive) {
             return (
               <span
-                key={`${w.start}_${w.word}`}
+                key={`${w.start}_${w.word}_on`}
                 className="caption-pop px-2 py-0.5 rounded font-black tracking-wider uppercase shadow-md"
                 style={{
                   fontSize: `${fontSize}px`,
