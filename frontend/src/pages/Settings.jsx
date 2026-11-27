@@ -69,10 +69,10 @@ const SECTIONS = [
 export default function Settings() {
   const { settings, health, saveSettings, saveCookies, clearCookies, toast } = useStudio();
   const [section, setSection] = useState("engine");
-  const [provider, setProvider] = useState(settings?.ai_provider || "local_free");
+  const [provider, setProvider] = useState(settings?.ai_provider || "groq");
   const [apiKey, setApiKey] = useState("");
   const [aiModel, setAiModel] = useState(settings?.ai_model || "");
-  const [whisperModel, setWhisperModel] = useState(settings?.whisper_model || "tiny");
+  const [whisperModel, setWhisperModel] = useState(settings?.whisper_model || "small");
   const [cuda, setCuda] = useState(true);
   const [sttFallback, setSttFallback] = useState(settings?.transcription_provider || "auto");
   const [captionStyle, setCaptionStyle] = useState(settings?.default_caption_style || "hormozi");
@@ -138,17 +138,17 @@ export default function Settings() {
   };
 
   const resetDefaults = () => {
-    setProvider("local_free");
-    setWhisperModel("tiny");
+    setProvider("groq");
+    setWhisperModel("small");
     setSttFallback("auto");
     setCaptionStyle("hormozi");
     setLayout("center_crop");
     setMaxClips(6);
     saveSettings({
-      ai_provider: "local_free",
+      ai_provider: "groq",
       api_key: "",
       ai_model: "",
-      whisper_model: "tiny",
+      whisper_model: "small",
       transcription_provider: "auto",
       enable_local_whisper: true,
       default_caption_style: "hormozi",
@@ -252,7 +252,7 @@ export default function Settings() {
               </div>
               <span className="px-space-sm py-1 rounded bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm font-semibold flex items-center gap-space-xs">
                 <span className="w-1.5 h-1.5 rounded-full bg-tertiary-container" />
-                {provider === "local_free" ? "Free Mode Active" : "Cloud Mode"}
+                {provider === "local_free" || !settings?.api_key_preview ? "Free Mode Active" : "Cloud Mode"}
               </span>
             </div>
 
