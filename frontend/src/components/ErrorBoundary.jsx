@@ -3,11 +3,11 @@ import React from "react";
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
   }
 
   componentDidCatch(error, info) {
@@ -25,6 +25,11 @@ export default class ErrorBoundary extends React.Component {
           </div>
           <h1 className="text-lg font-semibold">The studio encountered an error</h1>
           <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
+            {this.state.error?.message ? (
+              <span className="block font-label-sm text-label-sm text-error-deep bg-error-soft border border-error-line rounded px-2 py-1.5 mt-2 break-words text-left">
+                {String(this.state.error.message).slice(0, 300)}
+              </span>
+            ) : null}
             Your saved projects are stored separately. Reload the studio to try again.
           </p>
           <button

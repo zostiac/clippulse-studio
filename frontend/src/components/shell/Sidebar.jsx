@@ -36,6 +36,7 @@ export default function Sidebar({ variant = "material", open = false, onClose })
   if (variant === "editorial") {
     return (
       <aside
+        aria-label="Primary"
         className={`fixed left-0 top-0 h-full w-64 bg-cloud z-[60] lg:z-50 flex flex-col justify-between py-2 border-r border-line shadow-sm transition-transform duration-200 ${drawerClass}`}
       >
         <div className="flex flex-col gap-4">
@@ -114,6 +115,7 @@ export default function Sidebar({ variant = "material", open = false, onClose })
 
   return (
     <aside
+      aria-label="Primary"
       className={`fixed left-0 top-0 h-full w-64 bg-surface-container-lowest z-[60] lg:z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)] transition-transform duration-200 ${drawerClass}`}
     >
       <div className="flex flex-col">
